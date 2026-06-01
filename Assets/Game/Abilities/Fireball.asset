@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AbilityDataSO
   abilityName: Fireball
   type: 0
-  castTime: 2
+  castTime: 2.4
   cooldown: 5
   damage: 25
   stunDuration: 0

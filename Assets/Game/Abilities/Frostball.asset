@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AbilityDataSO
   abilityName: Frostball
   type: 0
-  castTime: 1.6
+  castTime: 1
   cooldown: 4
   damage: 10
   stunDuration: 0

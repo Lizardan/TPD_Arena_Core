@@ -10,7 +10,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: a23a6191329e8dc4c9d8352d9c763cdf, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -5.53
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: a23a6191329e8dc4c9d8352d9c763cdf, type: 3}
       propertyPath: m_LocalPosition.y
@@ -50,7 +50,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: a23a6191329e8dc4c9d8352d9c763cdf, type: 3}
       propertyPath: m_Name
-      value: Player
+      value: Skin 1 (Wizard)
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -78,7 +78,7 @@ Animator:
   m_Controller: {fileID: 9100000, guid: 919bce8ec9461a342b82acf028a72906, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
-  m_ApplyRootMotion: 0
+  m_ApplyRootMotion: 1
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
   m_AnimatePhysics: 0

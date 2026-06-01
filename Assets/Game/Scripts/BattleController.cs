@@ -5,18 +5,9 @@ using UnityEngine.UI;
 
 public class BattleController : MonoBehaviour
 {
-    [Header("Player cubes and UI")]
-    public PlayerUI player1UI;
-    public PlayerUI player2UI;
-    public GameObject player1Cube;
-    public GameObject player2Cube;
-    public Animator player1Animator;
-    public Animator player2Animator;
-
-    [Header("Ability sets")]
-    public AbilityDataSO[] player1Abilities;
-    public AbilityDataSO[] player2Abilities;
-    public AbilityDataSO autoAttackData;
+    [Header("Player Controllers")]
+    public PlayerController player1;
+    public PlayerController player2;
 
     [Header("UI Controls")]
     public Button calculateButton;
@@ -25,15 +16,6 @@ public class BattleController : MonoBehaviour
     public RectTransform player1TimelineContainer;
     public RectTransform player2TimelineContainer;
     public GameObject timelineBlockPrefab;
-
-    [Header("VFX Prefabs")]
-    public GameObject stunVFXPrefab;
-    public GameObject damageTextPrefab;
-
-    [Header("Stun VFX Local")]
-    public Vector3 stunVFXLocalPosPlayer1 = new Vector3(0.5f, 1.25f, -1f);
-    public Vector3 stunVFXLocalPosPlayer2 = new Vector3(-0.5f, 1.25f, -1f);
-    public Vector3 stunVFXLocalScale = new Vector3(0.5f, 0.5f, 0.5f);
 
     private List<TimelineEvent> timelineEvents;
     private float battleDuration;
@@ -64,7 +46,10 @@ public class BattleController : MonoBehaviour
     public void CalculateBattle()
     {
         replayer.ClearVFX();
-        timelineEvents = BattleSimulator.Simulate(player1Abilities, player2Abilities, autoAttackData);
+        timelineEvents = BattleSimulator.Simulate(
+            player1.abilities, player2.abilities,
+            player1.autoAttack    // автоатака едина для обоих (можно брать player2, если разные)
+        );
         battleCalculated = true;
 
         if (timelineEvents.Count == 0)
@@ -167,7 +152,8 @@ public class BattleController : MonoBehaviour
                         {
                             state = Casting;
                             currentAbility = BattleSimulator.GetAbilityByName(ev.abilityName,
-                                playerIndex == 1 ? player1Abilities : player2Abilities, autoAttackData);
+                                playerIndex == 1 ? player1.abilities : player2.abilities,
+                                player1.autoAttack);   // автоатака одна для обоих
                             stateStart = ev.timestamp;
                         }
                         break;

@@ -14,9 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AbilityDataSO
   abilityName: Shield
   type: 2
-  castTime: 2
+  castTime: 3
   cooldown: 7
-  damage: 5
+  damage: 15
   stunDuration: 0
   displayColor: {r: 0.09416164, g: 0.20405696, b: 0.8679245, a: 1}
   animationClip: {fileID: 7400000, guid: cf706de1c3a49cd409a470b085e894f6, type: 2}
