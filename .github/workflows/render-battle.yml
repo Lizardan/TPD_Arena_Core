@@ -1,0 +1,59 @@
+name: Render Battle Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      battle_json:
+        description: 'Battle request JSON, e.g. {"leftHp":80,"rightHp":100}'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  render-battle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download latest Linux renderer
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build-linux-renderer.yml
+          name: battle-renderer
+          path: renderer
+          if_no_artifact_found: fail
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Write battle request JSON
+        env:
+          BATTLE_JSON: ${{ inputs.battle_json }}
+        run: |
+          printf '%s' "$BATTLE_JSON" > /tmp/battle-request.json
+          cat /tmp/battle-request.json
+
+      - name: Render battle MP4
+        run: |
+          chmod +x renderer/TPD_Arena_Core.x86_64
+          renderer/TPD_Arena_Core.x86_64 \
+            -batchmode \
+            -nographics \
+            -logFile - \
+            -executeMethod TPD.Arena.BattleExportCli.Run \
+            -exportJson /tmp/battle-request.json \
+            -output /tmp/battle.mp4
+
+      - name: Upload battle video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: battle-video
+          path: /tmp/battle.mp4
+          if-no-files-found: error

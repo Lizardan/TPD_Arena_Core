@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a7f3c2e19b4d5a648e0f1a2b3c4d5e6f, type: 3}
+  m_Name: BattleAbilityRegistry
+  m_EditorClassIdentifier: TPD.Arena::TPD.Arena.BattleAbilityRegistry
+  abilities:
+  - {fileID: 11400000, guid: 9aa4ce0dd037aa948933d2e52cd36139, type: 2}
+  - {fileID: 11400000, guid: 0384a42a31374e343a2e2e07ab13c79e, type: 2}
+  - {fileID: 11400000, guid: e8eb9ee6084137e439227aaded1541e9, type: 2}
+  - {fileID: 11400000, guid: dcd2fa29fdbc92847aad9849c31bd9a4, type: 2}
+  - {fileID: 11400000, guid: 7805b86e5fd3ffe4e80f9e98857fe33d, type: 2}
+  - {fileID: 11400000, guid: b1dbd2e312ecd1f4a8b0d94913da37e2, type: 2}

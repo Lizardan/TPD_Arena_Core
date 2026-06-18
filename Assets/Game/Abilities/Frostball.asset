@@ -20,3 +20,7 @@ MonoBehaviour:
   stunDuration: 0
   displayColor: {r: 0, g: 0.32636464, b: 1, a: 1}
   animationClip: {fileID: 7400000, guid: 0a9b52b222b9f164c8d99122084205aa, type: 2}
+  castVfxPrefab: {fileID: 0}
+  hitVfxPrefab: {fileID: 7904898002847524615, guid: a2ccf81a1d5b163448ebdf66b5e746d6, type: 3}
+  hitVfxOffset: {x: 0, y: 1, z: 0}
+  vfxLocalScale: {x: 0.675, y: 0.675, z: 0.675}

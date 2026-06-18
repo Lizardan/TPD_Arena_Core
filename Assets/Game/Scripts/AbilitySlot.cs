@@ -1,14 +1,17 @@
 using System;
 
-[Serializable]
-public class AbilitySlot
+namespace TPD.Arena
 {
-    public AbilityDataSO abilityData;
-    [UnityEngine.HideInInspector] public float cooldownRemaining;
-
-    public AbilitySlot(AbilityDataSO data)
+    [Serializable]
+    public class AbilitySlot
     {
-        abilityData = data;
-        cooldownRemaining = 0;
+        public AbilityDataSO abilityData;
+        [UnityEngine.HideInInspector] public float cooldownRemaining;
+
+        public AbilitySlot(AbilityDataSO data)
+        {
+            abilityData = data;
+            cooldownRemaining = 0;
+        }
     }
 }

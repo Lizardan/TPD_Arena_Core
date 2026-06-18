@@ -73,3 +73,20 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# --- Project-specific ---
+
+# Local battle video exports
+/[Ee]xports/
+
+# Telegram bot secrets and Python runtime
+.env
+.env.*
+!.env.example
+tools/telegram-bot/.env
+tools/telegram-bot/.venv/
+__pycache__/
+*.py[cod]
+
+# Unity license file (never commit)
+*.ulf
