@@ -42,13 +42,17 @@ jobs:
 
       - name: Render battle MP4
         run: |
-          set -euo pipefail
-          echo "=== renderer layout ==="
-          find renderer -maxdepth 4 \( -type f -o -type d \) | head -80
+          set -eu
+          echo "=== renderer layout (top entries) ==="
+          find renderer -maxdepth 4 \( -type f -o -type d \) 2>/dev/null | head -80 || true
 
-          BINARY="$(find renderer -type f -name 'TPD_Arena_Core.x86_64' | head -1)"
+          BINARY="$(find renderer -type f -name 'TPD_Arena_Core.x86_64' -print -quit 2>/dev/null || true)"
           if [ -z "$BINARY" ]; then
-            echo "TPD_Arena_Core.x86_64 not found under renderer/"
+            BINARY="$(find renderer -type f -name 'TPD_Arena_Core' -print -quit 2>/dev/null || true)"
+          fi
+          if [ -z "$BINARY" ]; then
+            echo "Linux player binary not found under renderer/"
+            find renderer -maxdepth 5 -type f 2>/dev/null | head -40 || true
             exit 1
           fi
 
