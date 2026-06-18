@@ -6,9 +6,26 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const cloudflareRoot = path.resolve(root, "..");
 const webAppRoot = path.resolve(cloudflareRoot, "..", "web-app");
 const publicRoot = path.resolve(cloudflareRoot, "public");
-const unitySource = process.env.UNITY_WEBGL_SOURCE
+const unitySourceRoot = process.env.UNITY_WEBGL_SOURCE
   ? path.resolve(process.env.UNITY_WEBGL_SOURCE)
   : path.resolve(cloudflareRoot, "..", "..", "build", "WebGL");
+
+/** game-ci default output is build/WebGL/WebGL (see legacy main.yml). */
+function resolveUnityBuildDir(rootDir) {
+  const candidates = [
+    path.join(rootDir, "WebGL"),
+    rootDir,
+    path.join(rootDir, "TPDArena"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "index.html"))) {
+      return dir;
+    }
+  }
+  return candidates[0];
+}
+
+const unitySource = resolveUnityBuildDir(unitySourceRoot);
 
 function copyFile(src, dest) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -64,9 +81,9 @@ if (fs.existsSync(headersSrc)) {
 // Unity WebGL build
 const gameDir = path.join(publicRoot, "game");
 if (copyDir(unitySource, gameDir)) {
-  console.log(`Copied Unity WebGL → ${gameDir}`);
+  console.log(`Copied Unity WebGL from ${unitySource} → ${gameDir}`);
 } else {
-  console.warn(`Unity WebGL build not found at ${unitySource}`);
+  console.warn(`Unity WebGL build not found (checked under ${unitySourceRoot})`);
   console.warn("Deploy will serve shell only until CI produces build/WebGL.");
   fs.mkdirSync(gameDir, { recursive: true });
   fs.writeFileSync(

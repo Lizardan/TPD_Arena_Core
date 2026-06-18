@@ -15,7 +15,7 @@ on:
 jobs:
   build-webgl:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     continue-on-error: true
     permissions:
       contents: read
@@ -45,14 +45,12 @@ jobs:
 
       - name: Free disk space
         if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
+          android: false
+          dotnet: false
+          haskell: false
           large-packages: true
-          docker-images: false
           swap-storage: false
 
       - name: Cache Unity Library
@@ -60,39 +58,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-WebGL-${{ hashFiles('Assets/**', 'Packages/manifest.json', 'ProjectSettings/ProjectVersion.txt') }}
+          key: Library-v6-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
-            Library-WebGL-
-
-      - name: Restore WebGL output cache
-        uses: actions/cache@v4
-        with:
-          path: build/WebGL
-          key: webgl-${{ hashFiles('Assets/**', 'ProjectSettings/ProjectVersion.txt', 'Packages/manifest.json') }}
-          restore-keys: |
-            webgl-
+            Library-v6-
 
       - name: Mark Unity build start
         if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.unity == 'true'
         run: |
           mkdir -p _ci-debug
           TS=$(($(date +%s)*1000))
-          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:pre-unity\",\"message\":\"unity build starting\",\"hypothesisId\":\"F\",\"data\":{\"cpuLimit\":\"default\",\"swapStorage\":false}}" >> _ci-debug/debug-a89d64.log
+          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:pre-unity\",\"message\":\"unity build starting\",\"hypothesisId\":\"G\",\"data\":{\"builder\":\"v5\",\"customParameters\":\"-ignoreAudio\",\"cacheKey\":\"Library-v6\"}}" >> _ci-debug/debug-a89d64.log
 
       - name: Build Unity WebGL
         id: unity_build
         if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.unity == 'true'
-        timeout-minutes: 40
-        uses: game-ci/unity-builder@v4
+        uses: game-ci/unity-builder@v5
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
-          unityVersion: auto
           targetPlatform: WebGL
-          buildsPath: build
-          buildName: TPDArena
+          customParameters: "-ignoreAudio"
 
       - name: Save Unity Library cache
         if: always()
@@ -108,10 +95,12 @@ jobs:
           mkdir -p _ci-debug
           LIB_MB=0
           if [ -d Library ]; then LIB_MB=$(du -sm Library | cut -f1); fi
-          WEBGL_INDEX=false
-          if [ -f build/WebGL/index.html ]; then WEBGL_INDEX=true; fi
+          WEBGL_NESTED=false
+          WEBGL_FLAT=false
+          if [ -f build/WebGL/WebGL/index.html ]; then WEBGL_NESTED=true; fi
+          if [ -f build/WebGL/index.html ]; then WEBGL_FLAT=true; fi
           TS=$(($(date +%s)*1000))
-          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:post-unity\",\"message\":\"post unity build state\",\"hypothesisId\":\"C\",\"data\":{\"libraryCacheHit\":\"${{ steps.library_cache.outputs.cache-hit }}\",\"libraryMb\":$LIB_MB,\"webglIndexExists\":$WEBGL_INDEX,\"unityOutcome\":\"${{ steps.unity_build.outcome }}\"}}" >> _ci-debug/debug-a89d64.log
+          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:post-unity\",\"message\":\"post unity build state\",\"hypothesisId\":\"G\",\"data\":{\"libraryCacheHit\":\"${{ steps.library_cache.outputs.cache-hit }}\",\"libraryMb\":$LIB_MB,\"webglNestedIndex\":$WEBGL_NESTED,\"webglFlatIndex\":$WEBGL_FLAT,\"unityOutcome\":\"${{ steps.unity_build.outcome }}\"}}" >> _ci-debug/debug-a89d64.log
 
       - name: Upload CI debug log
         if: always()

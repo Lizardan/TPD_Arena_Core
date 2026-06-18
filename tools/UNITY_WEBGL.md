@@ -71,6 +71,17 @@ npm run deploy
 - **FFmpeg export** is disabled on WebGL (`#if !UNITY_WEBGL`). Battle plays in-engine; MP4 upload to Telegram will be added via JS interop / WebCodecs later.
 - `WebGLBootstrap` reads `battle` (base64url JSON), `arena`, `host` from URL and auto-starts the fight.
 
+## CI (aligned with legacy main.yml)
+
+The working GitHub Pages workflow used:
+
+- `game-ci/unity-builder@v5`
+- `customParameters: "-ignoreAudio"` (required for headless Linux — avoids crashes)
+- Default output path: `build/WebGL/WebGL/`
+- Library cache key: `Library-v6-...`
+
+Current `deploy-cloudflare.yml` uses the same Unity build settings; `copy-web-app.mjs` picks `build/WebGL/WebGL` automatically.
+
 ## CI troubleshooting
 
 ### `Build failed with exit code 139`
