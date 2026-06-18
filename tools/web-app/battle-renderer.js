@@ -125,8 +125,97 @@ export class BattleRenderer {
 export async function recordBattleVideo(canvas, battle, onProgress) {
   const renderer = new BattleRenderer(canvas, battle);
   const frameCount = renderer.frameCount();
-  const stream = canvas.captureStream(FPS);
-  const mimeType = pickMimeType();
+
+  if (typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
+    try {
+      return await recordMp4WebCodecs(renderer, frameCount, battle, onProgress);
+    } catch (error) {
+      console.warn("WebCodecs MP4 encode failed:", error);
+    }
+  }
+
+  const mp4Mime = pickMp4MimeType();
+  if (mp4Mime) {
+    try {
+      return await recordMp4MediaRecorder(canvas, renderer, frameCount, battle, mp4Mime, onProgress);
+    } catch (error) {
+      console.warn("MediaRecorder MP4 encode failed:", error);
+    }
+  }
+
+  throw new Error(
+    "This device cannot encode MP4. Open the bot in Telegram on Android or desktop Chrome.",
+  );
+}
+
+async function recordMp4WebCodecs(renderer, frameCount, battle, onProgress) {
+  const { Muxer, ArrayBufferTarget } = await import("https://esm.sh/mp4-muxer@5.1.3");
+
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: {
+      codec: "avc",
+      width: WIDTH,
+      height: HEIGHT,
+    },
+    fastStart: "in-memory",
+  });
+
+  let encodeError = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (error) => {
+      encodeError = error;
+    },
+  });
+
+  const config = {
+    codec: "avc1.42E01E",
+    width: WIDTH,
+    height: HEIGHT,
+    bitrate: 2_500_000,
+    framerate: FPS,
+    latencyMode: "quality",
+  };
+
+  const { supported } = await VideoEncoder.isConfigSupported(config);
+  if (!supported) {
+    throw new Error("H.264 encoder is not supported on this device.");
+  }
+
+  encoder.configure(config);
+
+  const frameDurationUs = Math.round(1_000_000 / FPS);
+
+  for (let i = 0; i <= frameCount; i++) {
+    const time = Math.min(i / FPS, battle.duration);
+    renderer.renderAt(time);
+
+    const frame = new VideoFrame(renderer.canvas, {
+      timestamp: i * frameDurationUs,
+      duration: frameDurationUs,
+    });
+
+    while (encoder.encodeQueueSize > 4) {
+      await sleep(1);
+    }
+
+    encoder.encode(frame, { keyFrame: i % FPS === 0 });
+    frame.close();
+
+    if (encodeError) throw encodeError;
+    onProgress?.(i, frameCount);
+  }
+
+  await encoder.flush();
+  if (encodeError) throw encodeError;
+
+  muxer.finalize();
+  return new Blob([muxer.target.buffer], { type: "video/mp4" });
+}
+
+async function recordMp4MediaRecorder(canvas, renderer, frameCount, battle, mimeType, onProgress) {
+  const stream = canvas.captureStream(0);
   const recorder = new MediaRecorder(stream, {
     mimeType,
     videoBitsPerSecond: 2_500_000,
@@ -137,8 +226,9 @@ export async function recordBattleVideo(canvas, battle, onProgress) {
     if (event.data.size > 0) chunks.push(event.data);
   };
 
-  const stopped = new Promise((resolve) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+  const stopped = new Promise((resolve, reject) => {
+    recorder.onerror = () => reject(new Error("MediaRecorder failed."));
+    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/mp4" }));
   });
 
   recorder.start();
@@ -147,6 +237,7 @@ export async function recordBattleVideo(canvas, battle, onProgress) {
   for (let i = 0; i <= frameCount; i++) {
     const time = Math.min(i / FPS, battle.duration);
     renderer.renderAt(time);
+    stream.getVideoTracks()[0]?.requestFrame?.();
     onProgress?.(i, frameCount);
     await sleep(frameDelayMs);
   }
@@ -155,13 +246,9 @@ export async function recordBattleVideo(canvas, battle, onProgress) {
   return stopped;
 }
 
-function pickMimeType() {
-  const candidates = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "video/webm";
+function pickMp4MimeType() {
+  const candidates = ["video/mp4;codecs=avc1", "video/mp4"];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || null;
 }
 
 function sleep(ms) {

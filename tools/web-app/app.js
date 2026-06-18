@@ -39,7 +39,7 @@ async function fetchSession() {
 
 async function uploadVideo(blob) {
   const formData = new FormData();
-  formData.append("file", blob, `battle-${sessionId}.webm`);
+  formData.append("file", blob, `battle-${sessionId}.mp4`);
 
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/upload`, {
     method: "POST",

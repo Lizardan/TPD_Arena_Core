@@ -38,6 +38,20 @@ export async function sendMessage(
   });
 }
 
+export async function sendAnimation(
+  token: string,
+  chatId: number,
+  animation: Blob,
+  caption: string,
+  filename: string,
+): Promise<void> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("caption", caption);
+  form.append("animation", animation, filename);
+  await callTelegram(token, "sendAnimation", form);
+}
+
 export async function sendVideo(
   token: string,
   chatId: number,
