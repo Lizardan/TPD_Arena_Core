@@ -112,8 +112,6 @@ CI runs `report-webgl-sizes.mjs` after build and `prepare-pages-public.mjs` befo
 - Removes uncompressed `.data` / `.wasm` when a `.br` sibling exists
 - Fails with a file list if anything still exceeds 25 MiB
 
-Download artifact `wrangler-deploy-log-<run_id>` for the exact wrangler error.
-
 **If files are too large:** enable **Brotli** in Unity (Player → WebGL → Publishing Settings), or host `public/game/` on **Cloudflare R2**.
 
 ## BotFather

@@ -5,6 +5,7 @@ import {
   arenaWaitingText,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
+  resolveBotUsername,
   sendMessage,
 } from "../lib/telegram";
 import { extractJsonFromMessage } from "../lib/validation";
@@ -103,12 +104,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         openerName,
       });
 
-      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
+      const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const sent = await sendMessage(
         token,
         chatId,
         arenaWaitingText(openerName, null),
-        buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену"),
+        buildGroupArenaKeyboard(
+          botUsername,
+          arena.id,
+          "Войти на арену",
+          context.env.TELEGRAM_MINI_APP_SHORT_NAME,
+        ),
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);

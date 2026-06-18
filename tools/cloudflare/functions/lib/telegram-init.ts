@@ -25,9 +25,10 @@ export function displayNameFromUser(user: TelegramWebAppUser): string {
 }
 
 async function buildWebAppSecretKey(botToken: string): Promise<CryptoKey> {
+  // secret_key = HMAC_SHA256(key="WebAppData", message=bot_token) — see Telegram docs
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(botToken),
+    new TextEncoder().encode("WebAppData"),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -35,7 +36,7 @@ async function buildWebAppSecretKey(botToken: string): Promise<CryptoKey> {
   const secretKeyBuffer = await crypto.subtle.sign(
     "HMAC",
     keyMaterial,
-    new TextEncoder().encode("WebAppData"),
+    new TextEncoder().encode(botToken.trim()),
   );
   return crypto.subtle.importKey(
     "raw",
@@ -50,22 +51,24 @@ export async function verifyWebAppInitData(
   initData: string,
   botToken: string,
 ): Promise<TelegramWebAppUser | null> {
-  if (!initData || !botToken) return null;
+  const token = botToken?.trim();
+  if (!initData?.trim() || !token) return null;
 
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
   if (!hash) return null;
 
   params.delete("hash");
+  params.delete("signature");
   const entries = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
   const dataCheckString = entries.map(([k, v]) => `${k}=${v}`).join("\n");
 
-  const signingKey = await buildWebAppSecretKey(botToken);
+  const signingKey = await buildWebAppSecretKey(token);
   const calculated = bufferToHex(
     await crypto.subtle.sign("HMAC", signingKey, new TextEncoder().encode(dataCheckString)),
   );
 
-  if (!timingSafeEqual(calculated, hash)) return null;
+  if (!timingSafeEqual(calculated.toLowerCase(), hash.toLowerCase())) return null;
 
   const authDate = Number(params.get("auth_date"));
   if (!authDate || Date.now() / 1000 - authDate > 86400) return null;

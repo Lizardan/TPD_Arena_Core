@@ -10,15 +10,8 @@ import { fileURLToPath } from "node:url";
 const PAGES_MAX_BYTES = 25 * 1024 * 1024;
 const root = path.dirname(fileURLToPath(import.meta.url));
 const publicRoot = path.resolve(root, "..", "public");
-const debugLogPath = process.env.CI_DEBUG_LOG;
 
 const UNCOMPRESSED_SUFFIXES = [".data", ".wasm", ".framework.js", ".loader.js"];
-
-function appendDebug(entry) {
-  if (!debugLogPath) return;
-  fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
-  fs.appendFileSync(debugLogPath, `${JSON.stringify(entry)}\n`);
-}
 
 function listFiles(dir) {
   const files = [];
@@ -67,20 +60,6 @@ const gameDir = path.join(publicRoot, "game");
 const removed = pruneUncompressedDuplicates(gameDir);
 const sizes = collectSizes(publicRoot);
 const oversized = findOversized(sizes);
-
-appendDebug({
-  sessionId: "a89d64",
-  timestamp: Date.now(),
-  location: "prepare-pages-public.mjs",
-  message: "pages public prepared",
-  hypothesisId: "H1",
-  data: {
-    removedDuplicates: removed,
-    fileCount: sizes.length,
-    largest: sizes.slice(0, 8),
-    oversized,
-  },
-});
 
 console.log(`Pages public: ${sizes.length} files under ${publicRoot}`);
 for (const file of sizes.slice(0, 10)) {

@@ -67,11 +67,21 @@ Workflow **Deploy Cloudflare** will:
 
 ### 5. Bot in group chat
 
+**Required for group button «Войти на арену»** (link `https://t.me/YourBot?startapp=...`):
+
+1. Open [@BotFather](https://t.me/BotFather) → `/mybots` → your bot
+2. **Bot Settings → Configure Mini App → Enable Mini App**
+3. URL: `https://tpd-arena.pages.dev/` (must match `WEB_APP_URL`)
+4. **Bot Settings → Menu Button → Configure** → same URL (CI also sets this via API)
+5. If you still see **Bot_Invalid**: the bot in the button link must be **your** bot with Main Mini App enabled — not a placeholder name
+
+Optional: if you created a named Mini App via `/newapp`, set `TELEGRAM_MINI_APP_SHORT_NAME` in `wrangler.toml` (short name from BotFather).
+
+Then:
+
 1. Add bot to a Telegram group
 2. In [@BotFather](https://t.me/BotFather): `/setprivacy` → **Disable**
-3. In BotFather: **Bot Settings → Menu Button → Configure** → URL `https://tpd-arena.pages.dev`  
-   (needed for `?startapp=` links from group buttons)
-4. Optional `/setcommands`:
+3. Optional `/setcommands`:
    ```
    arena - Открыть арену в группе
    battle - Соло-бой в личке

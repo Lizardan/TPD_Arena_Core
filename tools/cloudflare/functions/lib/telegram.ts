@@ -95,19 +95,58 @@ export function buildWebAppKeyboard(webAppUrl: string, buttonText = "Сгене�
   };
 }
 
+export function buildGroupArenaDeepLink(
+  botUsername: string,
+  arenaId: string,
+  miniAppShortName?: string,
+): string {
+  const username = botUsername.replace(/^@/, "");
+  const startapp = encodeURIComponent(arenaId);
+  if (miniAppShortName?.trim()) {
+    return `https://t.me/${username}/${miniAppShortName.trim()}?startapp=${startapp}`;
+  }
+  return `https://t.me/${username}?startapp=${startapp}`;
+}
+
+interface BotMe {
+  username?: string;
+  has_main_web_app?: boolean;
+}
+
+/** Prefer live getMe username — wrangler.toml default may not match the real bot. */
+export async function resolveBotUsername(token: string, configured?: string): Promise<string> {
+  try {
+    const me = await callTelegram<BotMe>(token, "getMe");
+    if (me.username) return me.username;
+  } catch {
+    // fall through to configured username
+  }
+  if (configured?.trim()) return configured.replace(/^@/, "");
+  throw new Error("Could not resolve bot username (getMe failed).");
+}
+
+export async function botHasMainMiniApp(token: string): Promise<boolean> {
+  try {
+    const me = await callTelegram<BotMe>(token, "getMe");
+    return me.has_main_web_app === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Inline `web_app` buttons work only in private chats; groups need a URL deep link. */
 export function buildGroupArenaKeyboard(
   botUsername: string,
   arenaId: string,
   buttonText: string,
+  miniAppShortName?: string,
 ) {
-  const username = botUsername.replace(/^@/, "");
   return {
     inline_keyboard: [
       [
         {
           text: buttonText,
-          url: `https://t.me/${username}?startapp=${encodeURIComponent(arenaId)}`,
+          url: buildGroupArenaDeepLink(botUsername, arenaId, miniAppShortName),
         },
       ],
     ],
