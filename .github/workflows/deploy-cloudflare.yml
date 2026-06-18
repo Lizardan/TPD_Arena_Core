@@ -182,6 +182,7 @@ jobs:
         env:
           UNITY_WEBGL_SOURCE: ${{ github.workspace }}/build/WebGL
           REQUIRE_GAME: '1'
+          APP_BUILD_ID: ${{ github.sha }}
         run: npm run copy-web-app
 
       - name: Verify Unity files in public/game

@@ -157,22 +157,58 @@ export function buildArenaWebAppUrl(baseUrl: string, arenaId: string): string {
   return `${baseUrl.replace(/\/$/, "")}/?arena=${encodeURIComponent(arenaId)}`;
 }
 
-export function arenaWaitingText(openerName: string, player1: { displayName: string } | null): string {
+export function arenaWaitingText(
+  openerName: string,
+  player1: { displayName: string } | null,
+  arenaId?: string,
+): string {
+  const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
   if (!player1) {
     return (
-      `${openerName} открыл арену.\n\n` +
-      `Ждём двух бойцов. Первые два вошедших в Mini App сразятся на арене, остальные — зрители.`
+      `${openerName} открыл арену.${codeLine}\n\n` +
+      `Ждём двух бойцов. Оба нажимают кнопку ниже в этом сообщении.\n` +
+      `Не отправляйте /arena повторно — иначе откроется другая арена.`
     );
   }
   return (
-    `${openerName} открыл арену.\n\n` +
+    `${openerName} открыл арену.${codeLine}\n\n` +
     `Левый боец: ${player1.displayName}\n` +
-    `Ждём правого бойца…`
+    `Ждём правого бойца…\n\n` +
+    `Второй боец — кнопка в этом же сообщении.`
   );
 }
 
-export function arenaFightingText(player1Name: string, player2Name: string): string {
-  return `Сражаются: ${player1Name} против ${player2Name}`;
+export function arenaFightingText(
+  player1Name: string,
+  player2Name: string,
+  arenaId?: string,
+): string {
+  const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
+  return `Сражаются: ${player1Name} против ${player2Name}${codeLine}`;
+}
+
+export function arenaAlreadyOpenText(arena: {
+  id: string;
+  status: string;
+  player1: { displayName: string } | null;
+  player2: { displayName: string } | null;
+}): string {
+  if (arena.status === "fighting" && arena.player1 && arena.player2) {
+    return (
+      `В этой группе уже идёт бой.\n` +
+      `Код арены: ${arena.id}\n` +
+      `${arena.player1.displayName} против ${arena.player2.displayName}\n\n` +
+      `Дождитесь окончания или нажмите кнопку ниже, чтобы смотреть.`
+    );
+  }
+  const p1 = arena.player1?.displayName;
+  return (
+    `Арена уже открыта.\n` +
+    `Код арены: ${arena.id}\n` +
+    (p1 ? `Левый боец: ${p1}\n` : "") +
+    `Ждём правого бойца…\n\n` +
+    `Не отправляйте /arena снова — оба бойца нажимают кнопку в сообщении с этим кодом.`
+  );
 }
 
 export function arenaAnimationCaption(

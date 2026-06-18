@@ -73,8 +73,10 @@ function waitingDetail(arena) {
   }
   if (p1) {
     let text = `Левый: ${p1}\nЖдём правого бойца…`;
+    text += `\n\nКод арены: ${arena.id || "?"}`;
+    text += "\nОба бойца нажимают кнопку в одном сообщении группы (с тем же кодом).";
     if (arena.needSecondPlayer) {
-      text += "\n\nВторой боец должен войти с другого аккаунта Telegram через кнопку в том же сообщении группы.";
+      text += "\nВторой боец — с другого аккаунта Telegram.";
     }
     return text;
   }
@@ -83,7 +85,7 @@ function waitingDetail(arena) {
 
 function lobbyDebugLine(arena) {
   const parts = [arena.status];
-  if (arena.id) parts.push(`arena:${arena.id.slice(0, 8)}`);
+  if (arena.id) parts.push(`код:${arena.id}`);
   if (arena.player2) parts.push("p2:ok");
   return parts.join(" · ");
 }

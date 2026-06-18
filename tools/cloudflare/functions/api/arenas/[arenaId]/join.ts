@@ -77,7 +77,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           token,
           result.arena.chatId,
           result.arena.messageId,
-          arenaFightingText(result.arena.player1.displayName, result.arena.player2.displayName),
+          arenaFightingText(
+            result.arena.player1.displayName,
+            result.arena.player2.displayName,
+            result.arena.id,
+          ),
           buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой", miniApp),
         );
       } catch (error) {
@@ -93,7 +97,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           token,
           result.arena.chatId,
           result.arena.messageId,
-          arenaWaitingText(result.arena.openerName, result.arena.player1),
+          arenaWaitingText(result.arena.openerName, result.arena.player1, result.arena.id),
           buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену", miniApp),
         );
       } catch (error) {

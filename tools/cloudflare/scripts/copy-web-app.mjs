@@ -27,6 +27,35 @@ function resolveUnityBuildDir(rootDir) {
 
 const unitySource = resolveUnityBuildDir(unitySourceRoot);
 
+function resolveBuildId() {
+  const fromEnv = process.env.APP_BUILD_ID?.trim();
+  if (fromEnv) return fromEnv.replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 40);
+  return String(Date.now());
+}
+
+const buildId = resolveBuildId();
+
+function injectBuildId(html) {
+  return html.replaceAll("__BUILD_ID__", buildId);
+}
+
+function patchGameIndexHtml(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  let html = fs.readFileSync(filePath, "utf8");
+  if (!html.includes("no-cache, no-store")) {
+    const cacheMeta =
+      '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />';
+    if (html.includes("<head>")) {
+      html = html.replace("<head>", `<head>\n    ${cacheMeta}`);
+    } else {
+      html = `${cacheMeta}\n${html}`;
+    }
+  }
+  // Unity uses fixed Build/* filenames — bust cache after each deploy
+  html = html.replace(/(Build\/[^"'\s?]+)(?!\?v=)/g, `$1?v=${buildId}`);
+  fs.writeFileSync(filePath, html);
+}
+
 function copyFile(src, dest) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
@@ -59,8 +88,13 @@ function emptyDir(dir) {
 fs.mkdirSync(publicRoot, { recursive: true });
 
 // Telegram shell → Mini App entry (lobby, then Unity WebGL)
-copyFile(path.join(webAppRoot, "shell-index.html"), path.join(publicRoot, "index.html"));
+const shellSrc = fs.readFileSync(path.join(webAppRoot, "shell-index.html"), "utf8");
+fs.writeFileSync(path.join(publicRoot, "index.html"), injectBuildId(shellSrc));
 copyFile(path.join(webAppRoot, "arena-lobby.js"), path.join(publicRoot, "arena-lobby.js"));
+fs.writeFileSync(
+  path.join(publicRoot, "version.json"),
+  JSON.stringify({ buildId, builtAt: new Date().toISOString() }, null, 2),
+);
 
 // Legacy JS fallback (optional dev / until Unity handles all flows)
 const legacyFiles = ["styles.css", "app.js", "battle-sim.js", "battle-renderer.js"];
@@ -83,6 +117,7 @@ const gameDir = path.join(publicRoot, "game");
 const requireGame = process.env.REQUIRE_GAME === "1";
 if (copyDir(unitySource, gameDir)) {
   console.log(`Copied Unity WebGL from ${unitySource} → ${gameDir}`);
+  patchGameIndexHtml(path.join(gameDir, "index.html"));
 } else if (requireGame) {
   console.error(`WebGL build required but not found (checked under ${unitySourceRoot})`);
   console.error("Run workflow_dispatch with Unity build, or restore WebGL cache/artifact.");
@@ -101,4 +136,4 @@ if (copyDir(unitySource, gameDir)) {
   );
 }
 
-console.log(`Prepared Cloudflare public → ${publicRoot}`);
+console.log(`Prepared Cloudflare public → ${publicRoot} (buildId=${buildId})`);

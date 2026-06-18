@@ -28,10 +28,42 @@ export interface ArenaRecord {
 
 const ARENA_TTL_SEC = 30 * 60;
 const KV_PREFIX = "arena:";
+const CHAT_ACTIVE_PREFIX = "chat-active:";
 const MAX_JOIN_RETRIES = 5;
 
 export function arenaKey(id: string): string {
   return `${KV_PREFIX}${id}`;
+}
+
+export function chatActiveKey(chatId: number): string {
+  return `${CHAT_ACTIVE_PREFIX}${chatId}`;
+}
+
+export async function getActiveArenaForChat(
+  kv: KVNamespace,
+  chatId: number,
+): Promise<ArenaRecord | null> {
+  const arenaId = await kv.get(chatActiveKey(chatId));
+  if (!arenaId) return null;
+
+  const arena = await getArena(kv, arenaId);
+  if (!arena || arena.status === "done" || arena.status === "expired") {
+    await kv.delete(chatActiveKey(chatId));
+    return null;
+  }
+  return arena;
+}
+
+export async function setActiveArenaForChat(
+  kv: KVNamespace,
+  chatId: number,
+  arenaId: string,
+): Promise<void> {
+  await kv.put(chatActiveKey(chatId), arenaId, { expirationTtl: ARENA_TTL_SEC });
+}
+
+export async function clearActiveArenaForChat(kv: KVNamespace, chatId: number): Promise<void> {
+  await kv.delete(chatActiveKey(chatId));
 }
 
 function newArenaId(): string {
@@ -66,6 +98,7 @@ export async function createArena(
   await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
     expirationTtl: ARENA_TTL_SEC,
   });
+  await setActiveArenaForChat(kv, params.chatId, arena.id);
 
   return arena;
 }
@@ -201,6 +234,10 @@ export async function markArenaDone(kv: KVNamespace, arenaId: string): Promise<A
   await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
     expirationTtl: ARENA_TTL_SEC,
   });
+  const active = await getActiveArenaForChat(kv, arena.chatId);
+  if (active?.id === arena.id) {
+    await clearActiveArenaForChat(kv, arena.chatId);
+  }
   return arena;
 }
 

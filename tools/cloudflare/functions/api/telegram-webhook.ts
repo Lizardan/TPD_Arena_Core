@@ -1,7 +1,8 @@
 import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
-import { createArena, updateArenaMessageId } from "../lib/arena-store";
+import { createArena, getActiveArenaForChat, updateArenaMessageId } from "../lib/arena-store";
 import {
+  arenaAlreadyOpenText,
   arenaWaitingText,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
@@ -98,23 +99,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       const openerName = message.from ? displayName(message.from) : "Игрок";
+      const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
+      const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
+
+      const existing = await getActiveArenaForChat(kv, chatId);
+      if (existing) {
+        const buttonText = existing.status === "fighting" ? "Смотреть бой" : "Войти на арену";
+        await sendMessage(
+          token,
+          chatId,
+          arenaAlreadyOpenText(existing),
+          buildGroupArenaKeyboard(botUsername, existing.id, buttonText, miniApp),
+        );
+        return jsonResponse({ ok: true });
+      }
+
       const arena = await createArena(kv, {
         chatId,
         messageId: 0,
         openerName,
       });
 
-      const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const sent = await sendMessage(
         token,
         chatId,
-        arenaWaitingText(openerName, null),
-        buildGroupArenaKeyboard(
-          botUsername,
-          arena.id,
-          "Войти на арену",
-          context.env.TELEGRAM_MINI_APP_SHORT_NAME,
-        ),
+        arenaWaitingText(openerName, null, arena.id),
+        buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену", miniApp),
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);
