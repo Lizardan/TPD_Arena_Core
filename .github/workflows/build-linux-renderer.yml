@@ -49,7 +49,7 @@ jobs:
           targetPlatform: StandaloneLinux64
           buildsPath: build
           buildName: TPD_Arena_Core
-          customParameters: -nographics
+          customParameters: -nographics -ignoreAudio
 
       - name: Upload battle renderer artifact
         uses: actions/upload-artifact@v4

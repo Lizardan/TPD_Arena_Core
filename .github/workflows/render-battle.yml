@@ -46,6 +46,7 @@ jobs:
           renderer/TPD_Arena_Core.x86_64 \
             -batchmode \
             -nographics \
+            -ignoreAudio \
             -logFile - \
             -executeMethod TPD.Arena.BattleExportCli.Run \
             -exportJson /tmp/battle-request.json \
