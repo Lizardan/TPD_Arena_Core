@@ -4,3 +4,9 @@
 
 /game/*
   Cache-Control: public, max-age=31536000, immutable
+
+/game/*.br
+  Content-Encoding: br
+
+/game/*.wasm.br
+  Content-Type: application/wasm

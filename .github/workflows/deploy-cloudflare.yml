@@ -92,6 +92,22 @@ jobs:
             exit 1
           fi
 
+      - name: Report WebGL file sizes
+        if: steps.unity_build.outcome == 'success'
+        working-directory: tools/cloudflare
+        env:
+          UNITY_WEBGL_SOURCE: ${{ github.workspace }}/build/WebGL
+          WEBGL_SIZE_REPORT: ${{ github.workspace }}/webgl-size-report.txt
+        run: node scripts/report-webgl-sizes.mjs
+
+      - name: Upload WebGL size report
+        if: steps.unity_build.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: webgl-size-report
+          path: webgl-size-report.txt
+          if-no-files-found: warn
+
       - name: Save Unity Library cache
         if: always()
         continue-on-error: true
@@ -173,6 +189,20 @@ jobs:
           SKIP_GAME_IF_MISSING: ${{ steps.webgl_artifact.outcome != 'success' && '1' || '0' }}
         run: npm run copy-web-app
 
+      - name: Prepare public for Pages (25 MiB limit)
+        working-directory: tools/cloudflare
+        env:
+          CI_DEBUG_LOG: ${{ github.workspace }}/_ci-debug/debug-a89d64.log
+        run: node scripts/prepare-pages-public.mjs
+
+      - name: Upload deploy debug log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-debug-a89d64-deploy
+          path: _ci-debug/debug-a89d64.log
+          if-no-files-found: ignore
+
       - name: Verify Cloudflare credentials
         working-directory: tools/cloudflare
         env:
@@ -206,11 +236,23 @@ jobs:
         run: echo "$TELEGRAM_BOT_TOKEN" | npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=tpd-arena
 
       - name: Deploy to Cloudflare Pages
+        id: pages_deploy
         working-directory: tools/cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages deploy public --project-name=tpd-arena --branch=main --commit-dirty=true
+          WRANGLER_LOG: debug
+        run: |
+          set -o pipefail
+          npx wrangler pages deploy public --project-name=tpd-arena --branch=main --commit-dirty=true 2>&1 | tee ../deploy-wrangler.log
+
+      - name: Upload wrangler deploy log on failure
+        if: failure() && steps.pages_deploy.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wrangler-deploy-log-${{ github.run_id }}
+          path: tools/deploy-wrangler.log
+          if-no-files-found: warn
 
       - name: Register Telegram webhook
         working-directory: tools/cloudflare

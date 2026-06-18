@@ -101,7 +101,20 @@ The workflow already:
 
 ### Deploy without Unity build
 
-Even if `build-webgl` fails, **deploy still runs** — lobby and bot update, Unity shows a placeholder until WebGL is built.
+If `build-webgl` fails, **deploy does not run** (`needs: build-webgl`).
+
+### `Deploy to Cloudflare Pages` fails (exit 1, ~1 second)
+
+Cloudflare Pages rejects **any single file over 25 MiB**. Unity WebGL often outputs large `.data` / `.wasm` blobs.
+
+CI runs `report-webgl-sizes.mjs` after build and `prepare-pages-public.mjs` before deploy:
+
+- Removes uncompressed `.data` / `.wasm` when a `.br` sibling exists
+- Fails with a file list if anything still exceeds 25 MiB
+
+Download artifact `wrangler-deploy-log-<run_id>` for the exact wrangler error.
+
+**If files are too large:** enable **Brotli** in Unity (Player → WebGL → Publishing Settings), or host `public/game/` on **Cloudflare R2**.
 
 ## BotFather
 

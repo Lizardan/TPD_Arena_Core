@@ -1,0 +1,1329 @@
+------formdata-undici-063437905327
+Content-Disposition: form-data; name="metadata"
+
+{"main_module":"functionsWorker-0.7596633583429873.js"}
+------formdata-undici-063437905327
+Content-Disposition: form-data; name="functionsWorker-0.7596633583429873.js"; filename="functionsWorker-0.7596633583429873.js"
+Content-Type: application/javascript+module
+
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// lib/env.ts
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(jsonResponse, "jsonResponse");
+function errorResponse(message, status) {
+  return jsonResponse({ detail: message }, status);
+}
+__name(errorResponse, "errorResponse");
+
+// lib/stats-api.ts
+var DEFAULT_HP = 100;
+async function fetchPlayerStats(leftName, rightName, statsApiUrl) {
+  if (!statsApiUrl) {
+    return { leftHp: DEFAULT_HP, rightHp: DEFAULT_HP };
+  }
+  const url = new URL(statsApiUrl);
+  url.searchParams.set("left", leftName);
+  url.searchParams.set("right", rightName);
+  try {
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      console.warn("Stats API error:", response.status);
+      return { leftHp: DEFAULT_HP, rightHp: DEFAULT_HP };
+    }
+    const data = await response.json();
+    const leftHp = Number.isInteger(data.leftHp) ? data.leftHp : DEFAULT_HP;
+    const rightHp = Number.isInteger(data.rightHp) ? data.rightHp : DEFAULT_HP;
+    return { leftHp, rightHp };
+  } catch (error) {
+    console.warn("Stats API fetch failed:", error);
+    return { leftHp: DEFAULT_HP, rightHp: DEFAULT_HP };
+  }
+}
+__name(fetchPlayerStats, "fetchPlayerStats");
+
+// lib/arena-store.ts
+var ARENA_TTL_SEC = 30 * 60;
+var KV_PREFIX = "arena:";
+var MAX_JOIN_RETRIES = 5;
+function arenaKey(id) {
+  return `${KV_PREFIX}${id}`;
+}
+__name(arenaKey, "arenaKey");
+function newArenaId() {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+__name(newArenaId, "newArenaId");
+async function createArena(kv, params) {
+  const now = Date.now();
+  const arena = {
+    id: newArenaId(),
+    chatId: params.chatId,
+    messageId: params.messageId,
+    status: "waiting",
+    hostUserId: null,
+    openerName: params.openerName,
+    player1: null,
+    player2: null,
+    spectatorIds: [],
+    battle: { leftHp: 100, rightHp: 100 },
+    battleStartAt: null,
+    createdAt: now,
+    exp: now + ARENA_TTL_SEC * 1e3
+  };
+  await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+    expirationTtl: ARENA_TTL_SEC
+  });
+  return arena;
+}
+__name(createArena, "createArena");
+async function getArena(kv, id) {
+  const raw = await kv.get(arenaKey(id));
+  if (!raw)
+    return null;
+  const arena = JSON.parse(raw);
+  if (arena.exp < Date.now() && arena.status !== "done") {
+    arena.status = "expired";
+  }
+  return arena;
+}
+__name(getArena, "getArena");
+function roleForUser(arena, userId) {
+  if (arena.hostUserId === userId)
+    return "host";
+  if (arena.player1?.id === userId)
+    return "player1";
+  if (arena.player2?.id === userId)
+    return "player2";
+  return "spectator";
+}
+__name(roleForUser, "roleForUser");
+function alreadyJoined(arena, userId) {
+  return arena.player1?.id === userId || arena.player2?.id === userId || arena.spectatorIds.includes(userId) || arena.hostUserId === userId;
+}
+__name(alreadyJoined, "alreadyJoined");
+async function joinArena(kv, arenaId, player, statsApiUrl) {
+  for (let attempt = 0; attempt < MAX_JOIN_RETRIES; attempt++) {
+    const arena = await getArena(kv, arenaId);
+    if (!arena) {
+      throw new Error("\u0410\u0440\u0435\u043D\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0438\u043B\u0438 \u0438\u0441\u0442\u0435\u043A\u043B\u0430.");
+    }
+    if (arena.status === "expired" || arena.status === "done") {
+      throw new Error("\u042D\u0442\u0430 \u0430\u0440\u0435\u043D\u0430 \u0443\u0436\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430.");
+    }
+    if (alreadyJoined(arena, player.id)) {
+      return {
+        arena,
+        role: roleForUser(arena, player.id),
+        isHost: arena.hostUserId === player.id,
+        justStarted: false
+      };
+    }
+    let justStarted = false;
+    if (arena.status === "fighting") {
+      if (!arena.spectatorIds.includes(player.id)) {
+        arena.spectatorIds.push(player.id);
+        await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+          expirationTtl: ARENA_TTL_SEC
+        });
+      }
+      return {
+        arena,
+        role: "spectator",
+        isHost: false,
+        justStarted: false
+      };
+    }
+    if (!arena.player1) {
+      arena.player1 = player;
+      arena.hostUserId = player.id;
+    } else if (!arena.player2 && arena.player1.id !== player.id) {
+      arena.player2 = player;
+      arena.battle = await fetchPlayerStats(
+        arena.player1.displayName,
+        player.displayName,
+        statsApiUrl
+      );
+      arena.status = "fighting";
+      justStarted = true;
+    } else {
+      if (!arena.spectatorIds.includes(player.id)) {
+        arena.spectatorIds.push(player.id);
+      }
+      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+        expirationTtl: ARENA_TTL_SEC
+      });
+      return {
+        arena,
+        role: "spectator",
+        isHost: arena.hostUserId === player.id,
+        justStarted: false
+      };
+    }
+    await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+      expirationTtl: ARENA_TTL_SEC
+    });
+    return {
+      arena,
+      role: roleForUser(arena, player.id),
+      isHost: arena.hostUserId === player.id,
+      justStarted
+    };
+  }
+  throw new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043D\u044F\u0442\u044C \u0441\u043B\u043E\u0442. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437.");
+}
+__name(joinArena, "joinArena");
+async function markArenaDone(kv, arenaId) {
+  const arena = await getArena(kv, arenaId);
+  if (!arena)
+    return null;
+  arena.status = "done";
+  await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+    expirationTtl: ARENA_TTL_SEC
+  });
+  return arena;
+}
+__name(markArenaDone, "markArenaDone");
+async function updateArenaMessageId(kv, arenaId, messageId) {
+  const arena = await getArena(kv, arenaId);
+  if (!arena)
+    return null;
+  arena.messageId = messageId;
+  await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+    expirationTtl: ARENA_TTL_SEC
+  });
+  return arena;
+}
+__name(updateArenaMessageId, "updateArenaMessageId");
+function arenaToPublicJson(arena, userId) {
+  return {
+    id: arena.id,
+    status: arena.status,
+    openerName: arena.openerName,
+    player1: arena.player1,
+    player2: arena.player2,
+    battle: arena.battle,
+    battleStartAt: arena.battleStartAt,
+    isHost: userId != null && arena.hostUserId === userId,
+    role: userId != null ? roleForUser(arena, userId) : null
+  };
+}
+__name(arenaToPublicJson, "arenaToPublicJson");
+
+// lib/telegram.ts
+async function callTelegram(token, method, body) {
+  const init = { method: "POST" };
+  if (body instanceof FormData) {
+    init.body = body;
+  } else if (body) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, init);
+  const payload = await response.json();
+  if (!payload.ok) {
+    throw new Error(payload.description || `Telegram ${method} failed`);
+  }
+  return payload.result;
+}
+__name(callTelegram, "callTelegram");
+async function sendMessage(token, chatId, text, replyMarkup) {
+  return callTelegram(token, "sendMessage", {
+    chat_id: chatId,
+    text,
+    reply_markup: replyMarkup
+  });
+}
+__name(sendMessage, "sendMessage");
+async function editMessageText(token, chatId, messageId, text, replyMarkup) {
+  await callTelegram(token, "editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    reply_markup: replyMarkup
+  });
+}
+__name(editMessageText, "editMessageText");
+async function sendAnimation(token, chatId, animation, caption, filename) {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("caption", caption);
+  form.append("animation", animation, filename);
+  await callTelegram(token, "sendAnimation", form);
+}
+__name(sendAnimation, "sendAnimation");
+function buildWebAppKeyboard(webAppUrl, buttonText = "\u0421\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0432\u0438\u0434\u0435\u043E") {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: buttonText,
+          web_app: { url: webAppUrl }
+        }
+      ]
+    ]
+  };
+}
+__name(buildWebAppKeyboard, "buildWebAppKeyboard");
+function buildGroupArenaKeyboard(botUsername, arenaId, buttonText) {
+  const username = botUsername.replace(/^@/, "");
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: buttonText,
+          url: `https://t.me/${username}?startapp=${encodeURIComponent(arenaId)}`
+        }
+      ]
+    ]
+  };
+}
+__name(buildGroupArenaKeyboard, "buildGroupArenaKeyboard");
+function arenaWaitingText(openerName, player1) {
+  if (!player1) {
+    return `${openerName} \u043E\u0442\u043A\u0440\u044B\u043B \u0430\u0440\u0435\u043D\u0443.
+
+\u0416\u0434\u0451\u043C \u0434\u0432\u0443\u0445 \u0431\u043E\u0439\u0446\u043E\u0432. \u041F\u0435\u0440\u0432\u044B\u0435 \u0434\u0432\u0430 \u0432\u043E\u0448\u0435\u0434\u0448\u0438\u0445 \u0432 Mini App \u0441\u0440\u0430\u0437\u044F\u0442\u0441\u044F \u043D\u0430 \u0430\u0440\u0435\u043D\u0435, \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u2014 \u0437\u0440\u0438\u0442\u0435\u043B\u0438.`;
+  }
+  return `${openerName} \u043E\u0442\u043A\u0440\u044B\u043B \u0430\u0440\u0435\u043D\u0443.
+
+\u041B\u0435\u0432\u044B\u0439 \u0431\u043E\u0435\u0446: ${player1.displayName}
+\u0416\u0434\u0451\u043C \u043F\u0440\u0430\u0432\u043E\u0433\u043E \u0431\u043E\u0439\u0446\u0430\u2026`;
+}
+__name(arenaWaitingText, "arenaWaitingText");
+function arenaFightingText(player1Name, player2Name) {
+  return `\u0421\u0440\u0430\u0436\u0430\u044E\u0442\u0441\u044F: ${player1Name} \u043F\u0440\u043E\u0442\u0438\u0432 ${player2Name}`;
+}
+__name(arenaFightingText, "arenaFightingText");
+function arenaAnimationCaption(player1Name, player2Name, leftHp, rightHp) {
+  return `\u0411\u043E\u0439: ${player1Name} (${leftHp} HP) \u043F\u0440\u043E\u0442\u0438\u0432 ${player2Name} (${rightHp} HP)`;
+}
+__name(arenaAnimationCaption, "arenaAnimationCaption");
+
+// lib/telegram-init.ts
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length)
+    return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+__name(timingSafeEqual, "timingSafeEqual");
+function bufferToHex(buffer) {
+  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(bufferToHex, "bufferToHex");
+function displayNameFromUser(user) {
+  if (user.username)
+    return `@${user.username}`;
+  const parts = [user.first_name, user.last_name].filter(Boolean);
+  return parts.join(" ") || `user_${user.id}`;
+}
+__name(displayNameFromUser, "displayNameFromUser");
+async function buildWebAppSecretKey(botToken) {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(botToken),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const secretKeyBuffer = await crypto.subtle.sign(
+    "HMAC",
+    keyMaterial,
+    new TextEncoder().encode("WebAppData")
+  );
+  return crypto.subtle.importKey(
+    "raw",
+    secretKeyBuffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+__name(buildWebAppSecretKey, "buildWebAppSecretKey");
+async function verifyWebAppInitData(initData, botToken) {
+  if (!initData || !botToken)
+    return null;
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
+  if (!hash)
+    return null;
+  params.delete("hash");
+  const entries = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const dataCheckString = entries.map(([k, v]) => `${k}=${v}`).join("\n");
+  const signingKey = await buildWebAppSecretKey(botToken);
+  const calculated = bufferToHex(
+    await crypto.subtle.sign("HMAC", signingKey, new TextEncoder().encode(dataCheckString))
+  );
+  if (!timingSafeEqual(calculated, hash))
+    return null;
+  const authDate = Number(params.get("auth_date"));
+  if (!authDate || Date.now() / 1e3 - authDate > 86400)
+    return null;
+  const userRaw = params.get("user");
+  if (!userRaw)
+    return null;
+  try {
+    const user = JSON.parse(userRaw);
+    if (!user?.id)
+      return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+__name(verifyWebAppInitData, "verifyWebAppInitData");
+
+// api/arenas/[arenaId]/join.ts
+var onRequestPost = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  const kv = context.env.ARENA_KV;
+  if (!kv) {
+    return errorResponse("ARENA_KV is not configured.", 500);
+  }
+  const arenaId = context.params.arenaId;
+  if (!arenaId || Array.isArray(arenaId)) {
+    return errorResponse("Arena id is required.", 400);
+  }
+  let body;
+  try {
+    body = await context.request.json();
+  } catch {
+    return errorResponse("Invalid JSON body.", 400);
+  }
+  if (!body.initData) {
+    return errorResponse("initData is required.", 400);
+  }
+  const user = await verifyWebAppInitData(body.initData, token);
+  if (!user) {
+    return errorResponse("\u041D\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 Telegram.", 401);
+  }
+  try {
+    const result = await joinArena(
+      kv,
+      arenaId,
+      { id: user.id, displayName: displayNameFromUser(user) },
+      context.env.STATS_API_URL
+    );
+    if (result.justStarted && result.arena.player1 && result.arena.player2) {
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
+      await editMessageText(
+        token,
+        result.arena.chatId,
+        result.arena.messageId,
+        arenaFightingText(result.arena.player1.displayName, result.arena.player2.displayName),
+        buildGroupArenaKeyboard(botUsername, result.arena.id, "\u0421\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0431\u043E\u0439")
+      );
+    } else if (result.arena.status === "waiting" && result.arena.player1 && !result.arena.player2) {
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
+      await editMessageText(
+        token,
+        result.arena.chatId,
+        result.arena.messageId,
+        arenaWaitingText(result.arena.openerName, result.arena.player1),
+        buildGroupArenaKeyboard(botUsername, result.arena.id, "\u0412\u043E\u0439\u0442\u0438 \u043D\u0430 \u0430\u0440\u0435\u043D\u0443")
+      );
+    }
+    return jsonResponse({
+      ...arenaToPublicJson(result.arena, user.id),
+      justStarted: result.justStarted
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0439\u0442\u0438 \u043D\u0430 \u0430\u0440\u0435\u043D\u0443.";
+    return errorResponse(message, 400);
+  }
+}, "onRequestPost");
+
+// api/arenas/[arenaId]/upload.ts
+var MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+var onRequestPost2 = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  const kv = context.env.ARENA_KV;
+  if (!kv) {
+    return errorResponse("ARENA_KV is not configured.", 500);
+  }
+  const arenaId = context.params.arenaId;
+  if (!arenaId || Array.isArray(arenaId)) {
+    return errorResponse("Arena id is required.", 400);
+  }
+  const initData = context.request.headers.get("X-Telegram-Init-Data") || "";
+  const user = initData ? await verifyWebAppInitData(initData, token) : null;
+  if (!user) {
+    return errorResponse("\u041D\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 Telegram.", 401);
+  }
+  const arena = await getArena(kv, arenaId);
+  if (!arena) {
+    return errorResponse("\u0410\u0440\u0435\u043D\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0438\u043B\u0438 \u0438\u0441\u0442\u0435\u043A\u043B\u0430.", 404);
+  }
+  if (arena.hostUserId !== user.id) {
+    return errorResponse("\u0422\u043E\u043B\u044C\u043A\u043E \u0445\u043E\u0441\u0442 \u0430\u0440\u0435\u043D\u044B \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0432\u0438\u0434\u0435\u043E.", 403);
+  }
+  if (arena.status !== "fighting" && arena.status !== "done") {
+    return errorResponse("\u0411\u043E\u0439 \u0435\u0449\u0451 \u043D\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F.", 400);
+  }
+  const contentType = context.request.headers.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return errorResponse("Expected multipart form upload.", 400);
+  }
+  const form = await context.request.formData();
+  const rawFile = form.get("file");
+  if (!rawFile || typeof rawFile === "string") {
+    return errorResponse("Missing video file.", 400);
+  }
+  const file = rawFile;
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return errorResponse("Video file is too large.", 413);
+  }
+  const filename = `arena-${arenaId}.mp4`;
+  const p1 = arena.player1?.displayName || "\u0418\u0433\u0440\u043E\u043A 1";
+  const p2 = arena.player2?.displayName || "\u0418\u0433\u0440\u043E\u043A 2";
+  const caption = arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
+  try {
+    await sendAnimation(token, arena.chatId, file, caption, filename);
+    await markArenaDone(kv, arenaId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to send video.";
+    return errorResponse(message, 502);
+  }
+  return jsonResponse({ ok: true, arenaId });
+}, "onRequestPost");
+
+// lib/session.ts
+var SESSION_TTL_MS = 60 * 60 * 1e3;
+function base64UrlEncode(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+__name(base64UrlEncode, "base64UrlEncode");
+function base64UrlDecode(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = (4 - padded.length % 4) % 4;
+  const base64 = padded + "=".repeat(padLength);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+__name(base64UrlDecode, "base64UrlDecode");
+async function hmacSign(message, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(message)
+  );
+  return base64UrlEncode(new Uint8Array(signature));
+}
+__name(hmacSign, "hmacSign");
+async function createSessionId(chatId, battle, secret) {
+  const payload = {
+    chatId,
+    battle,
+    exp: Date.now() + SESSION_TTL_MS
+  };
+  const data = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
+  const signature = await hmacSign(data, secret);
+  return `${data}.${signature}`;
+}
+__name(createSessionId, "createSessionId");
+async function verifySessionId(sessionId, secret) {
+  const dot = sessionId.lastIndexOf(".");
+  if (dot <= 0)
+    return null;
+  const data = sessionId.slice(0, dot);
+  const signature = sessionId.slice(dot + 1);
+  const expected = await hmacSign(data, secret);
+  if (signature !== expected)
+    return null;
+  try {
+    const json = new TextDecoder().decode(base64UrlDecode(data));
+    const payload = JSON.parse(json);
+    if (!payload || typeof payload.chatId !== "number" || !payload.battle) {
+      return null;
+    }
+    if (payload.exp < Date.now())
+      return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+__name(verifySessionId, "verifySessionId");
+
+// api/sessions/[sessionId]/upload.ts
+var MAX_UPLOAD_BYTES2 = 50 * 1024 * 1024;
+var onRequestPost3 = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  const sessionId = context.params.sessionId;
+  if (!sessionId || Array.isArray(sessionId)) {
+    return errorResponse("Session id is required.", 400);
+  }
+  const session = await verifySessionId(sessionId, token);
+  if (!session) {
+    return errorResponse("Session not found or expired.", 404);
+  }
+  const contentType = context.request.headers.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return errorResponse("Expected multipart form upload.", 400);
+  }
+  const form = await context.request.formData();
+  const rawFile = form.get("file");
+  if (!rawFile || typeof rawFile === "string") {
+    return errorResponse("Missing video file.", 400);
+  }
+  const file = rawFile;
+  if (file.size > MAX_UPLOAD_BYTES2) {
+    return errorResponse("Video file is too large.", 413);
+  }
+  const filename = `battle-${sessionId}.mp4`;
+  const caption = `\u0411\u043E\u0439: ${session.battle.leftHp} HP \u043F\u0440\u043E\u0442\u0438\u0432 ${session.battle.rightHp} HP`;
+  try {
+    await sendAnimation(token, session.chatId, file, caption, filename);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to send video.";
+    return errorResponse(message, 502);
+  }
+  return jsonResponse({ ok: true, sessionId });
+}, "onRequestPost");
+
+// api/arenas/[arenaId].ts
+var onRequestGet = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  const arenaId = context.params.arenaId;
+  if (!arenaId || Array.isArray(arenaId)) {
+    return errorResponse("Arena id is required.", 400);
+  }
+  const kv = context.env.ARENA_KV;
+  if (!kv) {
+    return errorResponse("ARENA_KV is not configured.", 500);
+  }
+  const arena = await getArena(kv, arenaId);
+  if (!arena) {
+    return errorResponse("\u0410\u0440\u0435\u043D\u0430 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0438\u043B\u0438 \u0438\u0441\u0442\u0435\u043A\u043B\u0430.", 404);
+  }
+  const initData = context.request.headers.get("X-Telegram-Init-Data") || "";
+  const user = initData ? await verifyWebAppInitData(initData, token) : null;
+  return jsonResponse(arenaToPublicJson(arena, user?.id));
+}, "onRequestGet");
+
+// api/sessions/[sessionId].ts
+var onRequestGet2 = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  const sessionId = context.params.sessionId;
+  if (!sessionId || Array.isArray(sessionId)) {
+    return errorResponse("Session id is required.", 400);
+  }
+  const session = await verifySessionId(sessionId, token);
+  if (!session) {
+    return errorResponse("Session not found or expired.", 404);
+  }
+  return jsonResponse({
+    sessionId,
+    battle: session.battle,
+    completed: false
+  });
+}, "onRequestGet");
+
+// api/health.ts
+var onRequestGet3 = /* @__PURE__ */ __name(async () => {
+  return jsonResponse({ ok: true });
+}, "onRequestGet");
+
+// lib/validation.ts
+var MIN_HP = 1;
+var MAX_HP = 999;
+function validateBattlePayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("JSON \u0431\u043E\u044F \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442\u043E\u043C.");
+  }
+  const record = payload;
+  const leftHp = record.leftHp;
+  const rightHp = record.rightHp;
+  if (!Number.isInteger(leftHp) || !Number.isInteger(rightHp)) {
+    throw new Error("leftHp \u0438 rightHp \u0434\u043E\u043B\u0436\u043D\u044B \u0431\u044B\u0442\u044C \u0446\u0435\u043B\u044B\u043C\u0438 \u0447\u0438\u0441\u043B\u0430\u043C\u0438.");
+  }
+  if (leftHp < MIN_HP || leftHp > MAX_HP || rightHp < MIN_HP || rightHp > MAX_HP) {
+    throw new Error(`HP \u0434\u043E\u043B\u0436\u043D\u044B \u0431\u044B\u0442\u044C \u043E\u0442 ${MIN_HP} \u0434\u043E ${MAX_HP}.`);
+  }
+  const battle = {
+    leftHp,
+    rightHp
+  };
+  for (const side of ["leftAbilities", "rightAbilities"]) {
+    const abilities = record[side];
+    if (abilities === void 0)
+      continue;
+    if (!Array.isArray(abilities) || !abilities.every((item) => typeof item === "string")) {
+      throw new Error(`${side} \u0434\u043E\u043B\u0436\u0435\u043D \u0431\u044B\u0442\u044C \u043C\u0430\u0441\u0441\u0438\u0432\u043E\u043C \u0441\u0442\u0440\u043E\u043A.`);
+    }
+    battle[side] = abilities;
+  }
+  return battle;
+}
+__name(validateBattlePayload, "validateBattlePayload");
+function validateBattleJson(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    throw new Error("\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 JSON.");
+  }
+  return validateBattlePayload(payload);
+}
+__name(validateBattleJson, "validateBattleJson");
+function extractJsonFromMessage(text) {
+  let trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error('\u041E\u0442\u043F\u0440\u0430\u0432\u044C\u0442\u0435 JSON \u043F\u043E\u0441\u043B\u0435 /battle, \u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440:\n/battle {"leftHp":80,"rightHp":100}');
+  }
+  if (trimmed.startsWith("/battle")) {
+    trimmed = trimmed.slice("/battle".length).trim();
+  }
+  const match2 = trimmed.match(/\{[\s\S]*\}/);
+  if (!match2) {
+    throw new Error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043D\u0430\u0439\u0442\u0438 JSON-\u043E\u0431\u044A\u0435\u043A\u0442 \u0432 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0438.");
+  }
+  return validateBattleJson(match2[0]);
+}
+__name(extractJsonFromMessage, "extractJsonFromMessage");
+
+// api/telegram-webhook.ts
+function commandName(text) {
+  const first = text.trim().split(/\s/)[0];
+  return first.split("@")[0].toLowerCase();
+}
+__name(commandName, "commandName");
+function displayName(user) {
+  if (user.username)
+    return `@${user.username}`;
+  const parts = [user.first_name, user.last_name].filter(Boolean);
+  return parts.join(" ") || `user_${user.id}`;
+}
+__name(displayName, "displayName");
+function isGroupChat(chat) {
+  return chat.type === "group" || chat.type === "supergroup";
+}
+__name(isGroupChat, "isGroupChat");
+var onRequestPost4 = /* @__PURE__ */ __name(async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+  let update;
+  try {
+    update = await context.request.json();
+  } catch {
+    return errorResponse("Invalid Telegram update.", 400);
+  }
+  const message = update.message;
+  if (!message?.text || !message.chat?.id) {
+    return jsonResponse({ ok: true });
+  }
+  const chatId = message.chat.id;
+  const text = message.text.trim();
+  const command = commandName(text);
+  try {
+    if (command === "/start") {
+      await sendMessage(
+        token,
+        chatId,
+        '\u041E\u0442\u043F\u0440\u0430\u0432\u044C\u0442\u0435 /arena \u0432 \u0433\u0440\u0443\u043F\u043F\u043E\u0432\u043E\u043C \u0447\u0430\u0442\u0435 \u0438\u043B\u0438 /battle \u0441 JSON \u0432 \u043B\u0438\u0447\u043A\u0435.\n\n\u041F\u0440\u0438\u043C\u0435\u0440:\n/battle {"leftHp":80,"rightHp":100}'
+      );
+      return jsonResponse({ ok: true });
+    }
+    if (command === "/arena") {
+      if (!isGroupChat(message.chat)) {
+        await sendMessage(
+          token,
+          chatId,
+          "\u041A\u043E\u043C\u0430\u043D\u0434\u0430 /arena \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0432 \u0433\u0440\u0443\u043F\u043F\u043E\u0432\u043E\u043C \u0447\u0430\u0442\u0435. \u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u0431\u043E\u0442\u0430 \u0432 \u0433\u0440\u0443\u043F\u043F\u0443 \u0438 \u0432\u044B\u0437\u043E\u0432\u0438\u0442\u0435 \u0430\u0440\u0435\u043D\u0443 \u0442\u0430\u043C."
+        );
+        return jsonResponse({ ok: true });
+      }
+      const kv = context.env.ARENA_KV;
+      if (!kv) {
+        await sendMessage(token, chatId, "\u0410\u0440\u0435\u043D\u0430 \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 (KV \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D).");
+        return jsonResponse({ ok: true });
+      }
+      const openerName = message.from ? displayName(message.from) : "\u0418\u0433\u0440\u043E\u043A";
+      const arena = await createArena(kv, {
+        chatId,
+        messageId: 0,
+        openerName
+      });
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
+      const sent = await sendMessage(
+        token,
+        chatId,
+        arenaWaitingText(openerName, null),
+        buildGroupArenaKeyboard(botUsername, arena.id, "\u0412\u043E\u0439\u0442\u0438 \u043D\u0430 \u0430\u0440\u0435\u043D\u0443")
+      );
+      await updateArenaMessageId(kv, arena.id, sent.message_id);
+      return jsonResponse({ ok: true });
+    }
+    if (command === "/battle" || text.startsWith("{")) {
+      if (isGroupChat(message.chat)) {
+        await sendMessage(
+          token,
+          chatId,
+          "\u0412 \u0433\u0440\u0443\u043F\u043F\u0435 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439\u0442\u0435 /arena. /battle \u2014 \u0434\u043B\u044F \u043B\u0438\u0447\u043D\u044B\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 \u0441 \u0431\u043E\u0442\u043E\u043C."
+        );
+        return jsonResponse({ ok: true });
+      }
+      const battle = extractJsonFromMessage(text);
+      const sessionId = await createSessionId(chatId, battle, token);
+      const webAppUrl = `${context.env.WEB_APP_URL.replace(/\/$/, "")}/?session=${encodeURIComponent(sessionId)}`;
+      await sendMessage(
+        token,
+        chatId,
+        "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043A\u043D\u043E\u043F\u043A\u0443 \u043D\u0438\u0436\u0435. \u0411\u043E\u0439 \u043E\u0442\u0440\u0438\u0441\u0443\u0435\u0442\u0441\u044F \u043D\u0430 \u0432\u0430\u0448\u0435\u043C \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435, \u0437\u0430\u0442\u0435\u043C \u0432\u0438\u0434\u0435\u043E \u043F\u0440\u0438\u0434\u0451\u0442 \u0432 \u044D\u0442\u043E\u0442 \u0447\u0430\u0442.",
+        buildWebAppKeyboard(webAppUrl)
+      );
+      return jsonResponse({ ok: true });
+    }
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u044B\u0439 \u0437\u0430\u043F\u0440\u043E\u0441.";
+    await sendMessage(token, chatId, messageText);
+    return jsonResponse({ ok: true });
+  }
+  return jsonResponse({ ok: true });
+}, "onRequestPost");
+
+// ../.wrangler/tmp/pages-2reMH4/functionsRoutes-0.3527392519822097.mjs
+var routes = [
+  {
+    routePath: "/api/arenas/:arenaId/join",
+    mountPath: "/api/arenas/:arenaId",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost]
+  },
+  {
+    routePath: "/api/arenas/:arenaId/upload",
+    mountPath: "/api/arenas/:arenaId",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost2]
+  },
+  {
+    routePath: "/api/sessions/:sessionId/upload",
+    mountPath: "/api/sessions/:sessionId",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost3]
+  },
+  {
+    routePath: "/api/arenas/:arenaId",
+    mountPath: "/api/arenas",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet]
+  },
+  {
+    routePath: "/api/sessions/:sessionId",
+    mountPath: "/api/sessions",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/health",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet3]
+  },
+  {
+    routePath: "/api/telegram-webhook",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost4]
+  }
+];
+
+// ../node_modules/path-to-regexp/dist.es2015/index.js
+function lexer(str) {
+  var tokens = [];
+  var i = 0;
+  while (i < str.length) {
+    var char = str[i];
+    if (char === "*" || char === "+" || char === "?") {
+      tokens.push({ type: "MODIFIER", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "\\") {
+      tokens.push({ type: "ESCAPED_CHAR", index: i++, value: str[i++] });
+      continue;
+    }
+    if (char === "{") {
+      tokens.push({ type: "OPEN", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "}") {
+      tokens.push({ type: "CLOSE", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === ":") {
+      var name = "";
+      var j = i + 1;
+      while (j < str.length) {
+        var code = str.charCodeAt(j);
+        if (
+          // `0-9`
+          code >= 48 && code <= 57 || // `A-Z`
+          code >= 65 && code <= 90 || // `a-z`
+          code >= 97 && code <= 122 || // `_`
+          code === 95
+        ) {
+          name += str[j++];
+          continue;
+        }
+        break;
+      }
+      if (!name)
+        throw new TypeError("Missing parameter name at ".concat(i));
+      tokens.push({ type: "NAME", index: i, value: name });
+      i = j;
+      continue;
+    }
+    if (char === "(") {
+      var count = 1;
+      var pattern = "";
+      var j = i + 1;
+      if (str[j] === "?") {
+        throw new TypeError('Pattern cannot start with "?" at '.concat(j));
+      }
+      while (j < str.length) {
+        if (str[j] === "\\") {
+          pattern += str[j++] + str[j++];
+          continue;
+        }
+        if (str[j] === ")") {
+          count--;
+          if (count === 0) {
+            j++;
+            break;
+          }
+        } else if (str[j] === "(") {
+          count++;
+          if (str[j + 1] !== "?") {
+            throw new TypeError("Capturing groups are not allowed at ".concat(j));
+          }
+        }
+        pattern += str[j++];
+      }
+      if (count)
+        throw new TypeError("Unbalanced pattern at ".concat(i));
+      if (!pattern)
+        throw new TypeError("Missing pattern at ".concat(i));
+      tokens.push({ type: "PATTERN", index: i, value: pattern });
+      i = j;
+      continue;
+    }
+    tokens.push({ type: "CHAR", index: i, value: str[i++] });
+  }
+  tokens.push({ type: "END", index: i, value: "" });
+  return tokens;
+}
+__name(lexer, "lexer");
+function parse(str, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var tokens = lexer(str);
+  var _a = options.prefixes, prefixes = _a === void 0 ? "./" : _a, _b = options.delimiter, delimiter = _b === void 0 ? "/#?" : _b;
+  var result = [];
+  var key = 0;
+  var i = 0;
+  var path = "";
+  var tryConsume = /* @__PURE__ */ __name(function(type) {
+    if (i < tokens.length && tokens[i].type === type)
+      return tokens[i++].value;
+  }, "tryConsume");
+  var mustConsume = /* @__PURE__ */ __name(function(type) {
+    var value2 = tryConsume(type);
+    if (value2 !== void 0)
+      return value2;
+    var _a2 = tokens[i], nextType = _a2.type, index = _a2.index;
+    throw new TypeError("Unexpected ".concat(nextType, " at ").concat(index, ", expected ").concat(type));
+  }, "mustConsume");
+  var consumeText = /* @__PURE__ */ __name(function() {
+    var result2 = "";
+    var value2;
+    while (value2 = tryConsume("CHAR") || tryConsume("ESCAPED_CHAR")) {
+      result2 += value2;
+    }
+    return result2;
+  }, "consumeText");
+  var isSafe = /* @__PURE__ */ __name(function(value2) {
+    for (var _i = 0, delimiter_1 = delimiter; _i < delimiter_1.length; _i++) {
+      var char2 = delimiter_1[_i];
+      if (value2.indexOf(char2) > -1)
+        return true;
+    }
+    return false;
+  }, "isSafe");
+  var safePattern = /* @__PURE__ */ __name(function(prefix2) {
+    var prev = result[result.length - 1];
+    var prevText = prefix2 || (prev && typeof prev === "string" ? prev : "");
+    if (prev && !prevText) {
+      throw new TypeError('Must have text between two parameters, missing text after "'.concat(prev.name, '"'));
+    }
+    if (!prevText || isSafe(prevText))
+      return "[^".concat(escapeString(delimiter), "]+?");
+    return "(?:(?!".concat(escapeString(prevText), ")[^").concat(escapeString(delimiter), "])+?");
+  }, "safePattern");
+  while (i < tokens.length) {
+    var char = tryConsume("CHAR");
+    var name = tryConsume("NAME");
+    var pattern = tryConsume("PATTERN");
+    if (name || pattern) {
+      var prefix = char || "";
+      if (prefixes.indexOf(prefix) === -1) {
+        path += prefix;
+        prefix = "";
+      }
+      if (path) {
+        result.push(path);
+        path = "";
+      }
+      result.push({
+        name: name || key++,
+        prefix,
+        suffix: "",
+        pattern: pattern || safePattern(prefix),
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    var value = char || tryConsume("ESCAPED_CHAR");
+    if (value) {
+      path += value;
+      continue;
+    }
+    if (path) {
+      result.push(path);
+      path = "";
+    }
+    var open = tryConsume("OPEN");
+    if (open) {
+      var prefix = consumeText();
+      var name_1 = tryConsume("NAME") || "";
+      var pattern_1 = tryConsume("PATTERN") || "";
+      var suffix = consumeText();
+      mustConsume("CLOSE");
+      result.push({
+        name: name_1 || (pattern_1 ? key++ : ""),
+        pattern: name_1 && !pattern_1 ? safePattern(prefix) : pattern_1,
+        prefix,
+        suffix,
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    mustConsume("END");
+  }
+  return result;
+}
+__name(parse, "parse");
+function match(str, options) {
+  var keys = [];
+  var re = pathToRegexp(str, keys, options);
+  return regexpToFunction(re, keys, options);
+}
+__name(match, "match");
+function regexpToFunction(re, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.decode, decode = _a === void 0 ? function(x) {
+    return x;
+  } : _a;
+  return function(pathname) {
+    var m = re.exec(pathname);
+    if (!m)
+      return false;
+    var path = m[0], index = m.index;
+    var params = /* @__PURE__ */ Object.create(null);
+    var _loop_1 = /* @__PURE__ */ __name(function(i2) {
+      if (m[i2] === void 0)
+        return "continue";
+      var key = keys[i2 - 1];
+      if (key.modifier === "*" || key.modifier === "+") {
+        params[key.name] = m[i2].split(key.prefix + key.suffix).map(function(value) {
+          return decode(value, key);
+        });
+      } else {
+        params[key.name] = decode(m[i2], key);
+      }
+    }, "_loop_1");
+    for (var i = 1; i < m.length; i++) {
+      _loop_1(i);
+    }
+    return { path, index, params };
+  };
+}
+__name(regexpToFunction, "regexpToFunction");
+function escapeString(str) {
+  return str.replace(/([.+*?=^!:${}()[\]|/\\])/g, "\\$1");
+}
+__name(escapeString, "escapeString");
+function flags(options) {
+  return options && options.sensitive ? "" : "i";
+}
+__name(flags, "flags");
+function regexpToRegexp(path, keys) {
+  if (!keys)
+    return path;
+  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+  var index = 0;
+  var execResult = groupsRegex.exec(path.source);
+  while (execResult) {
+    keys.push({
+      // Use parenthesized substring match if available, index otherwise
+      name: execResult[1] || index++,
+      prefix: "",
+      suffix: "",
+      modifier: "",
+      pattern: ""
+    });
+    execResult = groupsRegex.exec(path.source);
+  }
+  return path;
+}
+__name(regexpToRegexp, "regexpToRegexp");
+function arrayToRegexp(paths, keys, options) {
+  var parts = paths.map(function(path) {
+    return pathToRegexp(path, keys, options).source;
+  });
+  return new RegExp("(?:".concat(parts.join("|"), ")"), flags(options));
+}
+__name(arrayToRegexp, "arrayToRegexp");
+function stringToRegexp(path, keys, options) {
+  return tokensToRegexp(parse(path, options), keys, options);
+}
+__name(stringToRegexp, "stringToRegexp");
+function tokensToRegexp(tokens, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.strict, strict = _a === void 0 ? false : _a, _b = options.start, start = _b === void 0 ? true : _b, _c = options.end, end = _c === void 0 ? true : _c, _d = options.encode, encode = _d === void 0 ? function(x) {
+    return x;
+  } : _d, _e = options.delimiter, delimiter = _e === void 0 ? "/#?" : _e, _f = options.endsWith, endsWith = _f === void 0 ? "" : _f;
+  var endsWithRe = "[".concat(escapeString(endsWith), "]|$");
+  var delimiterRe = "[".concat(escapeString(delimiter), "]");
+  var route = start ? "^" : "";
+  for (var _i = 0, tokens_1 = tokens; _i < tokens_1.length; _i++) {
+    var token = tokens_1[_i];
+    if (typeof token === "string") {
+      route += escapeString(encode(token));
+    } else {
+      var prefix = escapeString(encode(token.prefix));
+      var suffix = escapeString(encode(token.suffix));
+      if (token.pattern) {
+        if (keys)
+          keys.push(token);
+        if (prefix || suffix) {
+          if (token.modifier === "+" || token.modifier === "*") {
+            var mod = token.modifier === "*" ? "?" : "";
+            route += "(?:".concat(prefix, "((?:").concat(token.pattern, ")(?:").concat(suffix).concat(prefix, "(?:").concat(token.pattern, "))*)").concat(suffix, ")").concat(mod);
+          } else {
+            route += "(?:".concat(prefix, "(").concat(token.pattern, ")").concat(suffix, ")").concat(token.modifier);
+          }
+        } else {
+          if (token.modifier === "+" || token.modifier === "*") {
+            throw new TypeError('Can not repeat "'.concat(token.name, '" without a prefix and suffix'));
+          }
+          route += "(".concat(token.pattern, ")").concat(token.modifier);
+        }
+      } else {
+        route += "(?:".concat(prefix).concat(suffix, ")").concat(token.modifier);
+      }
+    }
+  }
+  if (end) {
+    if (!strict)
+      route += "".concat(delimiterRe, "?");
+    route += !options.endsWith ? "$" : "(?=".concat(endsWithRe, ")");
+  } else {
+    var endToken = tokens[tokens.length - 1];
+    var isEndDelimited = typeof endToken === "string" ? delimiterRe.indexOf(endToken[endToken.length - 1]) > -1 : endToken === void 0;
+    if (!strict) {
+      route += "(?:".concat(delimiterRe, "(?=").concat(endsWithRe, "))?");
+    }
+    if (!isEndDelimited) {
+      route += "(?=".concat(delimiterRe, "|").concat(endsWithRe, ")");
+    }
+  }
+  return new RegExp(route, flags(options));
+}
+__name(tokensToRegexp, "tokensToRegexp");
+function pathToRegexp(path, keys, options) {
+  if (path instanceof RegExp)
+    return regexpToRegexp(path, keys);
+  if (Array.isArray(path))
+    return arrayToRegexp(path, keys, options);
+  return stringToRegexp(path, keys, options);
+}
+__name(pathToRegexp, "pathToRegexp");
+
+// ../node_modules/wrangler/templates/pages-template-worker.ts
+var escapeRegex = /[.+?^${}()|[\]\\]/g;
+function* executeRequest(request) {
+  const requestPath = new URL(request.url).pathname;
+  for (const route of [...routes].reverse()) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult) {
+      for (const handler of route.middlewares.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: mountMatchResult.path
+        };
+      }
+    }
+  }
+  for (const route of routes) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: true
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult && route.modules.length) {
+      for (const handler of route.modules.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: matchResult.path
+        };
+      }
+      break;
+    }
+  }
+}
+__name(executeRequest, "executeRequest");
+var pages_template_worker_default = {
+  async fetch(originalRequest, env, workerContext) {
+    let request = originalRequest;
+    const handlerIterator = executeRequest(request);
+    let data = {};
+    let isFailOpen = false;
+    const next = /* @__PURE__ */ __name(async (input, init) => {
+      if (input !== void 0) {
+        let url = input;
+        if (typeof input === "string") {
+          url = new URL(input, request.url).toString();
+        }
+        request = new Request(url, init);
+      }
+      const result = handlerIterator.next();
+      if (result.done === false) {
+        const { handler, params, path } = result.value;
+        const context = {
+          request: new Request(request.clone()),
+          functionPath: path,
+          next,
+          params,
+          get data() {
+            return data;
+          },
+          set data(value) {
+            if (typeof value !== "object" || value === null) {
+              throw new Error("context.data must be an object");
+            }
+            data = value;
+          },
+          env,
+          waitUntil: workerContext.waitUntil.bind(workerContext),
+          passThroughOnException: () => {
+            isFailOpen = true;
+          }
+        };
+        const response = await handler(context);
+        if (!(response instanceof Response)) {
+          throw new Error("Your Pages function should return a Response");
+        }
+        return cloneResponse(response);
+      } else if ("ASSETS") {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      } else {
+        const response = await fetch(request);
+        return cloneResponse(response);
+      }
+    }, "next");
+    try {
+      return await next();
+    } catch (error) {
+      if (isFailOpen) {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      }
+      throw error;
+    }
+  }
+};
+var cloneResponse = /* @__PURE__ */ __name((response) => (
+  // https://fetch.spec.whatwg.org/#null-body-status
+  new Response(
+    [101, 204, 205, 304].includes(response.status) ? null : response.body,
+    response
+  )
+), "cloneResponse");
+export {
+  pages_template_worker_default as default
+};
+
+------formdata-undici-063437905327--
