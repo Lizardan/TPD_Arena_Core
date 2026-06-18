@@ -21,12 +21,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Detect Unity changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
@@ -45,7 +45,7 @@ jobs:
 
       - name: Free disk space
         if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@v1.3.1
         with:
           android: false
           dotnet: false
@@ -55,7 +55,7 @@ jobs:
 
       - name: Cache Unity Library
         id: library_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Library
           key: Library-v6-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
@@ -84,7 +84,7 @@ jobs:
       - name: Save Unity Library cache
         if: always()
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: Library
           key: ${{ steps.library_cache.outputs.cache-primary-key }}
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload CI debug log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-debug-a89d64
           path: _ci-debug/debug-a89d64.log
@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload Unity logs on failure
         if: failure() && steps.unity_build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unity-logs-${{ github.run_id }}
           path: |
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload WebGL artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: webgl-build
           path: build/WebGL
@@ -135,17 +135,17 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download WebGL artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: webgl-build
           path: build/WebGL
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
