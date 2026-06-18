@@ -71,6 +71,27 @@ npm run deploy
 - **FFmpeg export** is disabled on WebGL (`#if !UNITY_WEBGL`). Battle plays in-engine; MP4 upload to Telegram will be added via JS interop / WebCodecs later.
 - `WebGLBootstrap` reads `battle` (base64url JSON), `arena`, `host` from URL and auto-starts the fight.
 
+## CI troubleshooting
+
+### `Build failed with exit code 139`
+
+Unity crashed (segmentation fault) during WebGL build — often **out of memory** or **disk full** on GitHub runners.
+
+The workflow already:
+- frees disk space before build
+- caches `Library/` between runs
+- limits CPU (`-maxCpuCount 2`)
+
+**What to do:**
+1. Re-run the workflow — second run is faster with `Library` cache and may succeed.
+2. Download artifact `unity-logs-<run_id>` from the failed job (if present).
+3. Ensure `UNITY_LICENSE` is the full `.ulf` file from Unity Hub (not serial only).
+4. If it keeps failing: build WebGL locally and deploy manually (see below).
+
+### Deploy without Unity build
+
+Even if `build-webgl` fails, **deploy still runs** — lobby and bot update, Unity shows a placeholder until WebGL is built.
+
 ## BotFather
 
 Menu Button URL: `https://tpd-arena.pages.dev`

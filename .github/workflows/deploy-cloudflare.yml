@@ -33,7 +33,35 @@ jobs:
               - 'ProjectSettings/**'
               - 'Packages/**'
 
-      - name: Restore WebGL cache
+      - name: Check Unity license secrets
+        if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -z "${{ secrets.UNITY_LICENSE }}" ] && { [ -z "${{ secrets.UNITY_EMAIL }}" ] || [ -z "${{ secrets.UNITY_PASSWORD }}" ]; }; then
+            echo "::error::Добавьте UNITY_LICENSE (или UNITY_EMAIL + UNITY_PASSWORD) в GitHub Secrets. См. tools/UNITY_WEBGL.md"
+            exit 1
+          fi
+
+      - name: Free disk space
+        if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-WebGL-${{ hashFiles('Assets/**', 'Packages/manifest.json', 'ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: |
+            Library-WebGL-
+
+      - name: Restore WebGL output cache
         uses: actions/cache@v4
         with:
           path: build/WebGL
@@ -42,6 +70,7 @@ jobs:
             webgl-
 
       - name: Build Unity WebGL
+        id: unity_build
         if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
         uses: game-ci/unity-builder@v4
         env:
@@ -53,8 +82,20 @@ jobs:
           targetPlatform: WebGL
           buildsPath: build
           buildName: TPDArena
+          dockerCpuLimit: 2
+          customParameters: -maxCpuCount 2
+
+      - name: Upload Unity logs on failure
+        if: failure() && steps.unity_build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-logs-${{ github.run_id }}
+          path: |
+            Logs
+          if-no-files-found: ignore
 
       - name: Upload WebGL artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: webgl-build
@@ -63,6 +104,7 @@ jobs:
 
   deploy:
     needs: build-webgl
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,6 +114,7 @@ jobs:
 
       - name: Download WebGL artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: webgl-build
           path: build/WebGL
