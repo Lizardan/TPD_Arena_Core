@@ -2,11 +2,20 @@
   X-Frame-Options: ALLOWALL
   Content-Security-Policy: frame-ancestors 'self' https://web.telegram.org https://*.telegram.org
 
-/game/*
+/game/Build/*
   Cache-Control: public, max-age=31536000, immutable
 
-/game/*.br
+/game/Build/*.br
   Content-Encoding: br
 
-/game/*.wasm.br
+/game/Build/*.framework.js.br
+  Content-Type: application/javascript
+
+/game/Build/*.loader.js.br
+  Content-Type: application/javascript
+
+/game/Build/*.wasm.br
   Content-Type: application/wasm
+
+/game/*
+  Cache-Control: public, max-age=31536000, immutable

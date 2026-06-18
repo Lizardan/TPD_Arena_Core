@@ -36,7 +36,7 @@ async function buildWebAppSecretKey(botToken: string): Promise<CryptoKey> {
   const secretKeyBuffer = await crypto.subtle.sign(
     "HMAC",
     keyMaterial,
-    new TextEncoder().encode(botToken.trim()),
+    new TextEncoder().encode(normalizeBotToken(botToken)),
   );
   return crypto.subtle.importKey(
     "raw",
@@ -68,11 +68,15 @@ export async function verifyWebAppInitData(
   return result.user;
 }
 
+function normalizeBotToken(token: string): string {
+  return token.trim().replace(/\r/g, "");
+}
+
 export async function verifyWebAppInitDataDetailed(
   initData: string,
   botToken: string,
 ): Promise<InitDataVerifyResult> {
-  const token = botToken?.trim();
+  const token = normalizeBotToken(botToken ?? "");
   if (!initData?.trim() || !token) return { user: null, reason: "missing" };
 
   const params = new URLSearchParams(initData);

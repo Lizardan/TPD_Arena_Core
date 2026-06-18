@@ -47,10 +47,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const verified = await verifyWebAppInitDataDetailed(initData, token);
   if (!verified.user) {
-    const hint =
-      verified.reason === "bad_hash"
-        ? " Проверьте TELEGRAM_BOT_TOKEN в GitHub Secrets и Cloudflare Pages."
-        : "";
+    let hint = "";
+    if (verified.reason === "bad_hash") {
+      try {
+        const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
+        hint = ` Токен на сервере — бот @${botUsername}. Откройте Mini App через этого же бота в BotFather (Main Mini App).`;
+      } catch {
+        hint = " Проверьте TELEGRAM_BOT_TOKEN в GitHub Secrets и Cloudflare Pages.";
+      }
+    }
     return errorResponse(`Недействительные данные Telegram (${verified.reason ?? "unknown"}).${hint}`, 401);
   }
   const user = verified.user;
