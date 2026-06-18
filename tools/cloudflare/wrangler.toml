@@ -4,6 +4,7 @@ pages_build_output_dir = "public"
 
 [vars]
 WEB_APP_URL = "https://tpd-arena.pages.dev"
+TELEGRAM_BOT_USERNAME = "TPD_Arena_bot"
 # STATS_API_URL = "https://friend-server.example/stats"
 
 [[kv_namespaces]]

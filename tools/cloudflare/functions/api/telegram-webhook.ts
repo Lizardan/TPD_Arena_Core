@@ -3,7 +3,7 @@ import { errorResponse, jsonResponse } from "../lib/env";
 import { createArena, updateArenaMessageId } from "../lib/arena-store";
 import {
   arenaWaitingText,
-  buildArenaWebAppUrl,
+  buildGroupArenaKeyboard,
   buildWebAppKeyboard,
   sendMessage,
 } from "../lib/telegram";
@@ -103,12 +103,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         openerName,
       });
 
-      const webAppUrl = buildArenaWebAppUrl(context.env.WEB_APP_URL, arena.id);
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
       const sent = await sendMessage(
         token,
         chatId,
         arenaWaitingText(openerName, null),
-        buildWebAppKeyboard(webAppUrl, "Войти на арену"),
+        buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену"),
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);

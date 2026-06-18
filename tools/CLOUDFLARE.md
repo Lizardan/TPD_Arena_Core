@@ -63,8 +63,10 @@ Workflow **Deploy Cloudflare** will:
 ### 5. Bot in group chat
 
 1. Add bot to a Telegram group
-2. In [@BotFather](https://t.me/BotFather): `/setprivacy` → **Disable** (so `/arena` works without @mention)
-3. Optional `/setcommands`:
+2. In [@BotFather](https://t.me/BotFather): `/setprivacy` → **Disable**
+3. In BotFather: **Bot Settings → Menu Button → Configure** → URL `https://tpd-arena.pages.dev`  
+   (needed for `?startapp=` links from group buttons)
+4. Optional `/setcommands`:
    ```
    arena - Открыть арену в группе
    battle - Соло-бой в личке

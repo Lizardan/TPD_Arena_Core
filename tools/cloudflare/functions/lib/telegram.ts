@@ -95,6 +95,25 @@ export function buildWebAppKeyboard(webAppUrl: string, buttonText = "Сгене�
   };
 }
 
+/** Inline `web_app` buttons work only in private chats; groups need a URL deep link. */
+export function buildGroupArenaKeyboard(
+  botUsername: string,
+  arenaId: string,
+  buttonText: string,
+) {
+  const username = botUsername.replace(/^@/, "");
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: buttonText,
+          url: `https://t.me/${username}?startapp=${encodeURIComponent(arenaId)}`,
+        },
+      ],
+    ],
+  };
+}
+
 export function buildArenaWebAppUrl(baseUrl: string, arenaId: string): string {
   return `${baseUrl.replace(/\/$/, "")}/?arena=${encodeURIComponent(arenaId)}`;
 }

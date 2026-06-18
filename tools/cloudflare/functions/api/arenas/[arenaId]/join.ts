@@ -4,8 +4,7 @@ import { arenaToPublicJson, joinArena } from "../../../lib/arena-store";
 import {
   arenaFightingText,
   arenaWaitingText,
-  buildArenaWebAppUrl,
-  buildWebAppKeyboard,
+  buildGroupArenaKeyboard,
   editMessageText,
 } from "../../../lib/telegram";
 import { displayNameFromUser, verifyWebAppInitData } from "../../../lib/telegram-init";
@@ -55,28 +54,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
 
     if (result.justStarted && result.arena.player1 && result.arena.player2) {
-      const webAppUrl = buildArenaWebAppUrl(context.env.WEB_APP_URL, result.arena.id);
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
       await editMessageText(
         token,
         result.arena.chatId,
         result.arena.messageId,
         arenaFightingText(result.arena.player1.displayName, result.arena.player2.displayName),
-        buildWebAppKeyboard(webAppUrl, "Смотреть бой"),
+        buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой"),
       );
     } else if (
       result.arena.status === "waiting" &&
       result.arena.player1 &&
       !result.arena.player2
     ) {
+      const botUsername = context.env.TELEGRAM_BOT_USERNAME || "TPD_Arena_bot";
       await editMessageText(
         token,
         result.arena.chatId,
         result.arena.messageId,
         arenaWaitingText(result.arena.openerName, result.arena.player1),
-        buildWebAppKeyboard(
-          buildArenaWebAppUrl(context.env.WEB_APP_URL, result.arena.id),
-          "Войти на арену",
-        ),
+        buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену"),
       );
     }
 

@@ -8,13 +8,14 @@ const startButton = document.getElementById("start-btn");
 
 const params = new URLSearchParams(window.location.search);
 const sessionId = params.get("session");
-const arenaId = params.get("arena");
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
 }
+
+const arenaId = params.get("arena") || tg?.initDataUnsafe?.start_param || null;
 
 function setStatus(text) {
   statusEl.textContent = text;
