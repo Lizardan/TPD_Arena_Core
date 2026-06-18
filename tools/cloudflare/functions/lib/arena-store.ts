@@ -150,13 +150,20 @@ export async function joinArena(
       arena.hostUserId = player.id;
     } else if (!arena.player2 && arena.player1.id !== player.id) {
       arena.player2 = player;
+      arena.status = "fighting";
+      arena.battle = { leftHp: 100, rightHp: 100 };
+      justStarted = true;
+      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+        expirationTtl: ARENA_TTL_SEC,
+      });
       arena.battle = await fetchPlayerStats(
         arena.player1.displayName,
         player.displayName,
         statsApiUrl,
       );
-      arena.status = "fighting";
-      justStarted = true;
+      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+        expirationTtl: ARENA_TTL_SEC,
+      });
     } else {
       if (!arena.spectatorIds.includes(player.id)) {
         arena.spectatorIds.push(player.id);

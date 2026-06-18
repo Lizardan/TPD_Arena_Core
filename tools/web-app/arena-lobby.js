@@ -67,10 +67,25 @@ function waitingDetail(arena) {
     return "";
   }
   const p1 = arena.player1?.displayName;
-  if (!p1) {
-    return "Ждём первого бойца…";
+  const p2 = arena.player2?.displayName;
+  if (p1 && p2) {
+    return `Левый: ${p1}\nПравый: ${p2}\nЗапуск…`;
   }
-  return `Левый: ${p1}\nЖдём правого бойца…`;
+  if (p1) {
+    let text = `Левый: ${p1}\nЖдём правого бойца…`;
+    if (arena.needSecondPlayer) {
+      text += "\n\nВторой боец должен войти с другого аккаунта Telegram через кнопку в том же сообщении группы.";
+    }
+    return text;
+  }
+  return "Ждём первого бойца…";
+}
+
+function lobbyDebugLine(arena) {
+  const parts = [arena.status];
+  if (arena.id) parts.push(`arena:${arena.id.slice(0, 8)}`);
+  if (arena.player2) parts.push("p2:ok");
+  return parts.join(" · ");
 }
 
 function fightingDetail(arena) {
@@ -134,13 +149,35 @@ async function runArenaLobby(id) {
   setStatus("Вход на арену…");
   let arena = await joinArena(id);
   setStatus(roleStatusText(arena));
-  setDetail(waitingDetail(arena));
+  setDetail(`${waitingDetail(arena)}\n${lobbyDebugLine(arena)}`);
 
   while (arena.status === "waiting") {
     await sleep(1500);
-    arena = await fetchArena(id);
+    // POST /join (idempotent) — надёжнее GET с initData в заголовке
+    arena = await joinArena(id);
     setStatus(roleStatusText(arena));
-    setDetail(waitingDetail(arena));
+    setDetail(`${waitingDetail(arena)}\n${lobbyDebugLine(arena)}`);
+    // #region agent log
+    fetch("http://127.0.0.1:7799/ingest/eaabc3e1-bb50-46ab-90a8-b2b6f36f4f14", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a89d64" },
+      body: JSON.stringify({
+        sessionId: "a89d64",
+        runId: "lobby-poll",
+        hypothesisId: "H-poll",
+        location: "arena-lobby.js:poll",
+        message: "arena poll",
+        data: {
+          status: arena.status,
+          role: arena.role,
+          hasP1: Boolean(arena.player1),
+          hasP2: Boolean(arena.player2),
+          needSecondPlayer: Boolean(arena.needSecondPlayer),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
   }
 
   if (arena.status === "fighting" && arena.battle) {

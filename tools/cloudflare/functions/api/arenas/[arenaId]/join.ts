@@ -72,30 +72,42 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
 
     if (result.justStarted && result.arena.player1 && result.arena.player2) {
-      await editMessageText(
-        token,
-        result.arena.chatId,
-        result.arena.messageId,
-        arenaFightingText(result.arena.player1.displayName, result.arena.player2.displayName),
-        buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой", miniApp),
-      );
+      try {
+        await editMessageText(
+          token,
+          result.arena.chatId,
+          result.arena.messageId,
+          arenaFightingText(result.arena.player1.displayName, result.arena.player2.displayName),
+          buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой", miniApp),
+        );
+      } catch (error) {
+        console.warn("editMessageText (fighting) failed:", error);
+      }
     } else if (
       result.arena.status === "waiting" &&
       result.arena.player1 &&
       !result.arena.player2
     ) {
-      await editMessageText(
-        token,
-        result.arena.chatId,
-        result.arena.messageId,
-        arenaWaitingText(result.arena.openerName, result.arena.player1),
-        buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену", miniApp),
-      );
+      try {
+        await editMessageText(
+          token,
+          result.arena.chatId,
+          result.arena.messageId,
+          arenaWaitingText(result.arena.openerName, result.arena.player1),
+          buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену", miniApp),
+        );
+      } catch (error) {
+        console.warn("editMessageText (waiting) failed:", error);
+      }
     }
 
     return jsonResponse({
       ...arenaToPublicJson(result.arena, user.id),
       justStarted: result.justStarted,
+      needSecondPlayer:
+        result.arena.status === "waiting" &&
+        result.arena.player1?.id === user.id &&
+        !result.arena.player2,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Не удалось войти на арену.";

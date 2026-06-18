@@ -25,7 +25,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const initData = context.request.headers.get("X-Telegram-Init-Data") || "";
-  const user = initData ? await verifyWebAppInitData(initData, token) : null;
+  const user = initData
+    ? await verifyWebAppInitData(initData, token.trim().replace(/\r/g, ""))
+    : null;
 
-  return jsonResponse(arenaToPublicJson(arena, user?.id));
+  return jsonResponse(arenaToPublicJson(arena, user?.id), 200, {
+    "Cache-Control": "no-store",
+  });
 };
