@@ -80,8 +80,11 @@ if (fs.existsSync(headersSrc)) {
 
 // Unity WebGL build
 const gameDir = path.join(publicRoot, "game");
+const skipGameIfMissing = process.env.SKIP_GAME_IF_MISSING === "1";
 if (copyDir(unitySource, gameDir)) {
   console.log(`Copied Unity WebGL from ${unitySource} → ${gameDir}`);
+} else if (skipGameIfMissing) {
+  console.warn(`No WebGL artifact in this run — keeping previous game/ on Pages`);
 } else {
   console.warn(`Unity WebGL build not found (checked under ${unitySourceRoot})`);
   console.warn("Deploy will serve shell only until CI produces build/WebGL.");
