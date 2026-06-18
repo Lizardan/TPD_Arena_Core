@@ -1,0 +1,57 @@
+name: Deploy Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/cloudflare/**'
+      - 'tools/web-app/**'
+      - '.github/workflows/deploy-cloudflare.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/cloudflare/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tools/cloudflare
+        run: npm ci
+
+      - name: Copy web app
+        working-directory: tools/cloudflare
+        run: npm run copy-web-app
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=tpd-arena
+          workingDirectory: tools/cloudflare
+
+      - name: Set Telegram bot token on Pages
+        working-directory: tools/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: echo "$TELEGRAM_BOT_TOKEN" | npx wrangler pages secret put TELEGRAM_BOT_TOKEN --project-name=tpd-arena
+
+      - name: Register Telegram webhook
+        working-directory: tools/cloudflare
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WEB_APP_URL: https://tpd-arena.pages.dev
+        run: npm run set-webhook

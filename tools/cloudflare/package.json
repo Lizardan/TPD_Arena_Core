@@ -1,0 +1,15 @@
+{
+  "name": "tpd-arena-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "copy-web-app": "node scripts/copy-web-app.mjs",
+    "set-webhook": "node scripts/set-webhook.mjs",
+    "deploy": "npm run copy-web-app && wrangler pages deploy public --project-name=tpd-arena"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
+  }
+}

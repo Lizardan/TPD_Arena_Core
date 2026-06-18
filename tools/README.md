@@ -1,47 +1,36 @@
-# Headless battle renderer
+# TPD Arena — Telegram bot tools
 
-## Local CLI export (Unity Editor)
+Battle video via **Telegram Mini App** on **Cloudflare Pages**.
 
-1. Install [ffmpeg](https://ffmpeg.org/) and ensure it is on `PATH`.
-2. Open the project in Unity with `Assets/Game/Scenes/Game.unity` loaded.
-3. Use menu **TPD Arena → Export Battle From Sample JSON (FFmpeg)**.
+## Quick start
 
-Or run batchmode from the project root:
+See **[CLOUDFLARE.md](CLOUDFLARE.md)** — 4 steps: Cloudflare token → GitHub secrets → push → test `/battle`.
 
-```powershell
-& "C:\Program Files\Unity\Hub\Editor\<version>\Editor\Unity.exe" `
-  -batchmode -nographics -projectPath . `
-  -executeMethod TPD.Arena.BattleExportCli.Run `
-  -exportJson tools/sample-battle-request.json `
-  -output Exports/cli_battle.mp4 `
-  -forceFFmpeg `
-  -logFile -
+Live URL: `https://tpd-arena.pages.dev`
+
+## How it works
+
+```
+/battle JSON → Telegram webhook → Web App button
+Web App renders on user's device → POST /api/upload → video in chat
 ```
 
-## Linux headless build
+## Project layout
 
-`Game.unity` is the only scene in build settings. CI builds with:
+| Path | Role |
+|------|------|
+| [cloudflare/](cloudflare/) | Pages deploy, API, webhook |
+| [web-app/](web-app/) | Mini App source (canvas renderer) |
+| [sample-battle-request.json](sample-battle-request.json) | Example JSON |
 
-- Target: `StandaloneLinux64`
-- Binary: `build/StandaloneLinux64/TPD_Arena_Core.x86_64`
+## Unity local export (optional)
 
-Manual render on Linux (artifact contents):
+For MP4 export in Editor without Telegram:
 
-```bash
-BINARY_DIR=path/to/extracted/battle-renderer
-cd "$BINARY_DIR"
-chmod +x TPD_Arena_Core.x86_64
-xvfb-run --auto-servernum ./TPD_Arena_Core.x86_64 -batchmode -nographics -logFile - \
-  -executeMethod TPD.Arena.BattleExportCli.Run \
-  -exportJson /path/to/request.json \
-  -output /path/to/battle.mp4
-```
+- Menu **TPD Arena → Export Battle From Sample JSON (FFmpeg)**
+- CLI: `BattleExportCli.Run` with `-exportJson` / `-output`
 
-Requires `ffmpeg` in `PATH` (or set `FFMPEG_PATH`).
-
-## Battle request JSON
-
-MVP:
+## Battle JSON
 
 ```json
 {
@@ -50,15 +39,4 @@ MVP:
 }
 ```
 
-Optional ability loadouts (requires `BattleAbilityRegistry` on `BattleConfig`):
-
-```json
-{
-  "leftHp": 80,
-  "rightHp": 100,
-  "leftAbilities": ["Fireball", "Heal", "Shield"],
-  "rightAbilities": ["Frostball", "Stun", "Heal"]
-}
-```
-
-Sample file: `tools/sample-battle-request.json`
+Optional: `leftAbilities`, `rightAbilities` (string arrays).

@@ -1,0 +1,50 @@
+import type { Env } from "../../../lib/env";
+import { errorResponse, jsonResponse } from "../../../lib/env";
+import { verifySessionId } from "../../../lib/session";
+import { sendVideo } from "../../../lib/telegram";
+
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const token = context.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+
+  const sessionId = context.params.sessionId;
+  if (!sessionId || Array.isArray(sessionId)) {
+    return errorResponse("Session id is required.", 400);
+  }
+
+  const session = await verifySessionId(sessionId, token);
+  if (!session) {
+    return errorResponse("Session not found or expired.", 404);
+  }
+
+  const contentType = context.request.headers.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return errorResponse("Expected multipart form upload.", 400);
+  }
+
+  const form = await context.request.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return errorResponse("Missing video file.", 400);
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return errorResponse("Video file is too large.", 413);
+  }
+
+  const filename = file.name || `battle-${sessionId}.webm`;
+  const caption = `Battle: ${session.battle.leftHp} vs ${session.battle.rightHp} HP`;
+
+  try {
+    await sendVideo(token, session.chatId, file, caption, filename);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to send video.";
+    return errorResponse(message, 502);
+  }
+
+  return jsonResponse({ ok: true, sessionId });
+};

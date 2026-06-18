@@ -79,12 +79,15 @@ crashlytics-build.properties
 # Local battle video exports
 /[Ee]xports/
 
-# Telegram bot secrets and Python runtime
+# Telegram bot / Cloudflare
 .env
 .env.*
 !.env.example
-tools/telegram-bot/.env
-tools/telegram-bot/.venv/
+tools/cloudflare/node_modules/
+tools/cloudflare/public/*
+!tools/cloudflare/public/.gitkeep
+tools/web-app/dist/
+tools/web-app/config.js
 __pycache__/
 *.py[cod]
 
