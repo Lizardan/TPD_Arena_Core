@@ -14,7 +14,8 @@ on:
 
 jobs:
   build-webgl:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     continue-on-error: true
     permissions:
       contents: read
@@ -52,7 +53,7 @@ jobs:
           haskell: true
           large-packages: true
           docker-images: false
-          swap-storage: true
+          swap-storage: false
 
       - name: Cache Unity Library
         id: library_cache
@@ -71,9 +72,17 @@ jobs:
           restore-keys: |
             webgl-
 
+      - name: Mark Unity build start
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.unity == 'true'
+        run: |
+          mkdir -p _ci-debug
+          TS=$(($(date +%s)*1000))
+          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:pre-unity\",\"message\":\"unity build starting\",\"hypothesisId\":\"F\",\"data\":{\"cpuLimit\":\"default\",\"swapStorage\":false}}" >> _ci-debug/debug-a89d64.log
+
       - name: Build Unity WebGL
         id: unity_build
-        if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.unity == 'true'
+        timeout-minutes: 40
         uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -84,8 +93,6 @@ jobs:
           targetPlatform: WebGL
           buildsPath: build
           buildName: TPDArena
-          dockerCpuLimit: 1
-          customParameters: -maxCpuCount 1
 
       - name: Save Unity Library cache
         if: always()
