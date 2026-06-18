@@ -17,35 +17,9 @@ function run(cmd) {
   }
 }
 
-// #region agent log
-console.log(
-  JSON.stringify({
-    sessionId: "a89d64",
-    hypothesisId: "A",
-    location: "ensure-pages-project.mjs",
-    message: "ensure_project_start",
-    data: { projectName, productionBranch },
-    timestamp: Date.now(),
-  }),
-);
-// #endregion
-
 const create = run(
   `npx wrangler pages project create ${projectName} --production-branch=${productionBranch}`,
 );
-
-// #region agent log
-console.log(
-  JSON.stringify({
-    sessionId: "a89d64",
-    hypothesisId: "A",
-    location: "ensure-pages-project.mjs",
-    message: "create_project_result",
-    data: { ok: create.ok, code: create.code, output: create.out.slice(0, 800) },
-    timestamp: Date.now(),
-  }),
-);
-// #endregion
 
 if (create.ok) {
   console.log(`Created Pages project "${projectName}".`);

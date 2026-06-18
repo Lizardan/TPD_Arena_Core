@@ -33,8 +33,8 @@ Remove obsolete items if present: `API_BASE_URL` variable, Render secrets.
 Workflow **Deploy Cloudflare** will:
 
 - create the Pages project `tpd-arena` on first run (if it does not exist yet)
+- store `TELEGRAM_BOT_TOKEN` as a Pages secret **before** deploy (required for Functions)
 - build and deploy web-app + API to Pages
-- store `TELEGRAM_BOT_TOKEN` as a Pages secret
 - call `setWebhook` for your bot
 
 ### 4. Test in Telegram
