@@ -23,7 +23,7 @@ Or run batchmode from the project root:
 `Game.unity` is the only scene in build settings. CI builds with:
 
 - Target: `StandaloneLinux64`
-- Binary: `build/TPD_Arena_Core/TPD_Arena_Core.x86_64`
+- Binary: `build/StandaloneLinux64/TPD_Arena_Core.x86_64`
 
 Manual render on Linux:
 
