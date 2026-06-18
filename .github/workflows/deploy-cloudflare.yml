@@ -4,22 +4,80 @@ on:
   push:
     branches: [main]
     paths:
+      - 'Assets/**'
+      - 'ProjectSettings/**'
+      - 'Packages/**'
       - 'tools/cloudflare/**'
       - 'tools/web-app/**'
       - '.github/workflows/deploy-cloudflare.yml'
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-webgl:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Detect Unity changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            unity:
+              - 'Assets/**'
+              - 'ProjectSettings/**'
+              - 'Packages/**'
+
+      - name: Restore WebGL cache
+        uses: actions/cache@v4
+        with:
+          path: build/WebGL
+          key: webgl-${{ hashFiles('Assets/**', 'ProjectSettings/ProjectVersion.txt', 'Packages/manifest.json') }}
+          restore-keys: |
+            webgl-
+
+      - name: Build Unity WebGL
+        if: steps.changes.outputs.unity == 'true' || github.event_name == 'workflow_dispatch'
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: auto
+          targetPlatform: WebGL
+          buildsPath: build
+          buildName: TPDArena
+
+      - name: Upload WebGL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgl-build
+          path: build/WebGL
+          if-no-files-found: warn
+
+  deploy:
+    needs: build-webgl
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download WebGL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webgl-build
+          path: build/WebGL
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
@@ -29,8 +87,10 @@ jobs:
         working-directory: tools/cloudflare
         run: npm ci
 
-      - name: Copy web app
+      - name: Copy web app and Unity WebGL
         working-directory: tools/cloudflare
+        env:
+          UNITY_WEBGL_SOURCE: ${{ github.workspace }}/build/WebGL
         run: npm run copy-web-app
 
       - name: Verify Cloudflare credentials

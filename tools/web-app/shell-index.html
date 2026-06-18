@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, height=device-height, initial-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>TPD Arena</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #0d111c;
+        color: #e8ecf8;
+        font-family: system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Загрузка игры…</p>
+    <script>
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const arena = params.get("arena") || tg?.initDataUnsafe?.start_param;
+      const session = params.get("session");
+
+      const gameParams = new URLSearchParams();
+      if (arena) gameParams.set("arena", arena);
+      if (session) gameParams.set("session", session);
+
+      const query = gameParams.toString();
+      window.location.replace("/game/index.html" + (query ? "?" + query : ""));
+    </script>
+  </body>
+</html>

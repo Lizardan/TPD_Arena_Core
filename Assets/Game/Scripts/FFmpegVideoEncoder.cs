@@ -1,8 +1,10 @@
 using System;
-using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using UnityEngine;
+
+#if !UNITY_WEBGL
+using System.Diagnostics;
+using System.IO;
 
 namespace TPD.Arena
 {
@@ -154,3 +156,4 @@ namespace TPD.Arena
         }
     }
 }
+#endif

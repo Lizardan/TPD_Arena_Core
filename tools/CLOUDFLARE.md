@@ -2,7 +2,8 @@
 
 Everything runs on **Cloudflare Pages** at `https://tpd-arena.pages.dev`:
 
-- `/` — Telegram Mini App (client-side render)
+- `/` — Telegram Mini App shell → **Unity WebGL** at `/game/`
+- `/game/` — Unity WebGL build (from CI)
 - `/api/*` — bot webhook, arenas, sessions, video upload
 
 ## Your setup checklist (one time)
@@ -24,6 +25,9 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 | `CLOUDFLARE_ACCOUNT_ID` | **Account ID** from dashboard sidebar (32 hex chars) — **not** Zone ID |
 | `TELEGRAM_BOT_TOKEN` | from [@BotFather](https://t.me/BotFather) |
 | `ARENA_KV_NAMESPACE_ID` | optional — KV namespace id if auto-create fails (see below) |
+| `UNITY_LICENSE` | Unity activation `.ulf` for WebGL CI — see [UNITY_WEBGL.md](UNITY_WEBGL.md) |
+| `UNITY_EMAIL` | alternative to `UNITY_LICENSE` (with `UNITY_PASSWORD`) |
+| `UNITY_PASSWORD` | Unity account password for CI |
 
 **Important for `cfut_` tokens:** Account ID is required. Find it on the Cloudflare dashboard home page, right column — labeled **Account ID** (not under a domain/zone).
 
@@ -54,6 +58,7 @@ Commit the updated `id` in [wrangler.toml](wrangler.toml) if you deploy outside 
 
 Workflow **Deploy Cloudflare** will:
 
+- build **Unity WebGL** when game sources change (or on manual run)
 - ensure Pages project `tpd-arena` exists
 - ensure KV namespace `tpd-arena-arenas` exists
 - store `TELEGRAM_BOT_TOKEN` as a Pages secret **before** deploy
