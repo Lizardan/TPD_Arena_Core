@@ -84,7 +84,8 @@ export async function verifyWebAppInitDataDetailed(
   if (!hash) return { user: null, reason: "no_hash" };
 
   params.delete("hash");
-  params.delete("signature");
+  // Do not remove "signature" — it must stay in data-check-string for hash validation
+  // when Telegram sends both hash and signature (Bot API 8+). See telegram-apps init-data-node.
   const entries = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
   const dataCheckString = entries.map(([k, v]) => `${k}=${v}`).join("\n");
 

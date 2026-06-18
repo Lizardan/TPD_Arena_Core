@@ -15,7 +15,7 @@ interface JoinBody {
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
-  const token = context.env.TELEGRAM_BOT_TOKEN;
+  const token = context.env.TELEGRAM_BOT_TOKEN?.trim().replace(/\r/g, "") ?? "";
   if (!token) {
     return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
   }
