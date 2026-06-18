@@ -119,9 +119,8 @@ function launchUnity({ battle, arena, session, isHost }) {
 
   const gameParams = new URLSearchParams();
   gameParams.set("battle", encodeBattleParam(battle));
-  if (arena) gameParams.set("arena", arena);
-  if (session) gameParams.set("session", session);
   if (isHost) gameParams.set("host", "1");
+  // arena/session omitted — Unity page must not re-enter lobby
 
   window.location.replace(`/game/index.html?${gameParams.toString()}`);
 }
@@ -176,11 +175,18 @@ async function runSessionLobby(id) {
 
 async function main() {
   try {
-    if (arenaId) {
+    // /game/ must be Unity WebGL — if battle is in URL but lobby script loaded, stop loop
+    if (params.get("battle") && window.location.pathname.startsWith("/game")) {
+      setStatus("Unity WebGL не задеплоен.");
+      setDetail("Запустите полный CI (сборка Unity) или дождитесь деплоя game/.");
+      return;
+    }
+
+    if (arenaId && !params.get("battle")) {
       await runArenaLobby(arenaId);
       return;
     }
-    if (sessionId) {
+    if (sessionId && !params.get("battle")) {
       await runSessionLobby(sessionId);
       return;
     }

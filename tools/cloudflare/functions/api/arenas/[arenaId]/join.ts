@@ -8,7 +8,7 @@ import {
   editMessageText,
   resolveBotUsername,
 } from "../../../lib/telegram";
-import { displayNameFromUser, verifyWebAppInitData } from "../../../lib/telegram-init";
+import { displayNameFromUser, verifyWebAppInitDataDetailed } from "../../../lib/telegram-init";
 
 interface JoinBody {
   initData?: string;
@@ -45,10 +45,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("initData is required.", 400);
   }
 
-  const user = await verifyWebAppInitData(initData, token);
-  if (!user) {
-    return errorResponse("Недействительные данные Telegram.", 401);
+  const verified = await verifyWebAppInitDataDetailed(initData, token);
+  if (!verified.user) {
+    const hint =
+      verified.reason === "bad_hash"
+        ? " Проверьте TELEGRAM_BOT_TOKEN в GitHub Secrets и Cloudflare Pages."
+        : "";
+    return errorResponse(`Недействительные данные Telegram (${verified.reason ?? "unknown"}).${hint}`, 401);
   }
+  const user = verified.user;
 
   try {
     const result = await joinArena(

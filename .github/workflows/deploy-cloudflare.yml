@@ -61,6 +61,15 @@ jobs:
           restore-keys: |
             Library-v6-
 
+      - name: Restore WebGL output cache
+        id: webgl_cache
+        uses: actions/cache@v5
+        with:
+          path: build/WebGL
+          key: webgl-v1-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            webgl-v1-
+
       - name: Build Unity WebGL
         id: unity_build
         if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.unity == 'true'
@@ -74,19 +83,25 @@ jobs:
           customParameters: "-ignoreAudio -nographics"
 
       - name: Verify WebGL output
-        if: steps.unity_build.outcome == 'success'
+        id: webgl_ready
         run: |
           if [ -f build/WebGL/WebGL/index.html ]; then
             echo "WebGL OK: build/WebGL/WebGL/index.html"
+            echo "ready=true" >> $GITHUB_OUTPUT
           elif [ -f build/WebGL/index.html ]; then
             echo "WebGL OK: build/WebGL/index.html"
+            echo "ready=true" >> $GITHUB_OUTPUT
           else
-            echo "::error::Unity WebGL finished but index.html is missing"
-            exit 1
+            echo "ready=false" >> $GITHUB_OUTPUT
+            if [ "${{ steps.unity_build.outcome }}" = "success" ]; then
+              echo "::error::Unity WebGL finished but index.html is missing"
+              exit 1
+            fi
+            echo "::warning::No WebGL build in this run (Unity step skipped and cache miss)"
           fi
 
       - name: Report WebGL file sizes
-        if: steps.unity_build.outcome == 'success'
+        if: steps.webgl_ready.outputs.ready == 'true' && steps.unity_build.outcome == 'success'
         working-directory: tools/cloudflare
         env:
           UNITY_WEBGL_SOURCE: ${{ github.workspace }}/build/WebGL
@@ -110,8 +125,15 @@ jobs:
             Logs
           if-no-files-found: ignore
 
+      - name: Save WebGL output cache
+        if: steps.webgl_ready.outputs.ready == 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: build/WebGL
+          key: ${{ steps.webgl_cache.outputs.cache-primary-key }}
+
       - name: Upload WebGL artifact
-        if: steps.unity_build.outcome == 'success'
+        if: steps.webgl_ready.outputs.ready == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: webgl-build
@@ -135,6 +157,15 @@ jobs:
           name: webgl-build
           path: build/WebGL
 
+      - name: Restore WebGL cache if artifact missing
+        if: steps.webgl_artifact.outcome != 'success'
+        uses: actions/cache@v5
+        with:
+          path: build/WebGL
+          key: webgl-v1-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            webgl-v1-
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -150,8 +181,15 @@ jobs:
         working-directory: tools/cloudflare
         env:
           UNITY_WEBGL_SOURCE: ${{ github.workspace }}/build/WebGL
-          SKIP_GAME_IF_MISSING: ${{ steps.webgl_artifact.outcome != 'success' && '1' || '0' }}
+          REQUIRE_GAME: '1'
         run: npm run copy-web-app
+
+      - name: Verify Unity files in public/game
+        run: |
+          test -f tools/cloudflare/public/game/index.html || (echo "::error::public/game/index.html missing" && exit 1)
+          grep -q "unity-container\|createUnityInstance\|UnityLoader" tools/cloudflare/public/game/index.html \
+            || echo "::warning::game/index.html may not be a Unity loader (check artifact/cache)"
+          test -d tools/cloudflare/public/game/Build || (echo "::error::public/game/Build missing — Unity not deployed" && exit 1)
 
       - name: Prepare public for Pages (25 MiB limit)
         working-directory: tools/cloudflare

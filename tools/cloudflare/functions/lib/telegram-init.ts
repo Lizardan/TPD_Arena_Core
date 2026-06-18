@@ -47,16 +47,37 @@ async function buildWebAppSecretKey(botToken: string): Promise<CryptoKey> {
   );
 }
 
+export type InitDataRejectReason =
+  | "missing"
+  | "no_hash"
+  | "bad_hash"
+  | "expired"
+  | "no_user"
+  | "bad_user";
+
+export interface InitDataVerifyResult {
+  user: TelegramWebAppUser | null;
+  reason?: InitDataRejectReason;
+}
+
 export async function verifyWebAppInitData(
   initData: string,
   botToken: string,
 ): Promise<TelegramWebAppUser | null> {
+  const result = await verifyWebAppInitDataDetailed(initData, botToken);
+  return result.user;
+}
+
+export async function verifyWebAppInitDataDetailed(
+  initData: string,
+  botToken: string,
+): Promise<InitDataVerifyResult> {
   const token = botToken?.trim();
-  if (!initData?.trim() || !token) return null;
+  if (!initData?.trim() || !token) return { user: null, reason: "missing" };
 
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) return null;
+  if (!hash) return { user: null, reason: "no_hash" };
 
   params.delete("hash");
   params.delete("signature");
@@ -68,19 +89,23 @@ export async function verifyWebAppInitData(
     await crypto.subtle.sign("HMAC", signingKey, new TextEncoder().encode(dataCheckString)),
   );
 
-  if (!timingSafeEqual(calculated.toLowerCase(), hash.toLowerCase())) return null;
+  if (!timingSafeEqual(calculated.toLowerCase(), hash.toLowerCase())) {
+    return { user: null, reason: "bad_hash" };
+  }
 
   const authDate = Number(params.get("auth_date"));
-  if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
+  if (!authDate || Date.now() / 1000 - authDate > 86400) {
+    return { user: null, reason: "expired" };
+  }
 
   const userRaw = params.get("user");
-  if (!userRaw) return null;
+  if (!userRaw) return { user: null, reason: "no_user" };
 
   try {
     const user = JSON.parse(userRaw) as TelegramWebAppUser;
-    if (!user?.id) return null;
-    return user;
+    if (!user?.id) return { user: null, reason: "bad_user" };
+    return { user };
   } catch {
-    return null;
+    return { user: null, reason: "bad_user" };
   }
 }
