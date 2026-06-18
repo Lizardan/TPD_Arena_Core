@@ -40,12 +40,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler whoami
 
+      - name: Ensure Pages project exists
+        working-directory: tools/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_PROJECT_NAME: tpd-arena
+          PAGES_PRODUCTION_BRANCH: main
+        run: node scripts/ensure-pages-project.mjs
+
       - name: Deploy to Cloudflare Pages
         working-directory: tools/cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages deploy public --project-name=tpd-arena --commit-dirty=true
+        run: npx wrangler pages deploy public --project-name=tpd-arena --branch=main --commit-dirty=true
 
       - name: Set Telegram bot token on Pages
         working-directory: tools/cloudflare
