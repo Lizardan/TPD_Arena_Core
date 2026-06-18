@@ -14,7 +14,8 @@ on:
 
 jobs:
   build-webgl:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -54,6 +55,7 @@ jobs:
           swap-storage: true
 
       - name: Cache Unity Library
+        id: library_cache
         uses: actions/cache@v4
         with:
           path: Library
@@ -82,8 +84,35 @@ jobs:
           targetPlatform: WebGL
           buildsPath: build
           buildName: TPDArena
-          dockerCpuLimit: 2
-          customParameters: -maxCpuCount 2
+          dockerCpuLimit: 1
+          customParameters: -maxCpuCount 1
+
+      - name: Save Unity Library cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: Library
+          key: ${{ steps.library_cache.outputs.cache-primary-key }}
+
+      - name: CI debug diagnostics
+        if: always()
+        run: |
+          mkdir -p _ci-debug
+          LIB_MB=0
+          if [ -d Library ]; then LIB_MB=$(du -sm Library | cut -f1); fi
+          WEBGL_INDEX=false
+          if [ -f build/WebGL/index.html ]; then WEBGL_INDEX=true; fi
+          TS=$(($(date +%s)*1000))
+          echo "{\"sessionId\":\"a89d64\",\"timestamp\":$TS,\"location\":\"workflow:post-unity\",\"message\":\"post unity build state\",\"hypothesisId\":\"C\",\"data\":{\"libraryCacheHit\":\"${{ steps.library_cache.outputs.cache-hit }}\",\"libraryMb\":$LIB_MB,\"webglIndexExists\":$WEBGL_INDEX,\"unityOutcome\":\"${{ steps.unity_build.outcome }}\"}}" >> _ci-debug/debug-a89d64.log
+
+      - name: Upload CI debug log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-debug-a89d64
+          path: _ci-debug/debug-a89d64.log
+          if-no-files-found: warn
 
       - name: Upload Unity logs on failure
         if: failure() && steps.unity_build.outcome == 'failure'
