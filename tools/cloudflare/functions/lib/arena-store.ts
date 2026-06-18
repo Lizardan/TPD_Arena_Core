@@ -28,7 +28,6 @@ export interface ArenaRecord {
 
 const ARENA_TTL_SEC = 30 * 60;
 const KV_PREFIX = "arena:";
-const COUNTDOWN_MS = 2500;
 const MAX_JOIN_RETRIES = 5;
 
 export function arenaKey(id: string): string {
@@ -156,7 +155,6 @@ export async function joinArena(
         player.displayName,
         statsApiUrl,
       );
-      arena.battleStartAt = Date.now() + COUNTDOWN_MS;
       arena.status = "fighting";
       justStarted = true;
     } else {

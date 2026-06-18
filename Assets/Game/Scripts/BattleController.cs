@@ -65,6 +65,8 @@ namespace TPD.Arena
 
         private bool isPlaying;
 
+        private bool miniAppPlayback;
+
         private Coroutine playbackCoroutine;
 
         private BattlePlaybackMode playbackMode = BattlePlaybackMode.Runtime;
@@ -95,6 +97,31 @@ namespace TPD.Arena
             requestRightHp = request.rightHp;
             player1.SetMaxHP(LeftMaxHp);
             player2.SetMaxHP(RightMaxHp);
+        }
+
+        /// <summary>
+        /// Telegram Mini App: apply JSON, hide editor UI, simulate and play battle.
+        /// </summary>
+        public void RunFromTelegramRequest(BattleRequestJson request)
+        {
+            if (request == null)
+                return;
+
+            try
+            {
+                BattleRequestResolver.ApplyToController(this, request);
+            }
+            catch (System.InvalidOperationException ex)
+            {
+                Debug.LogError($"[MiniApp] {ex.Message}");
+                return;
+            }
+
+            miniAppPlayback = true;
+            SetDebugCanvasVisible(false);
+            SetExportChromeVisible(false);
+            CalculateBattle();
+            StartBattle();
         }
 
         public bool TryExportBattleVideo(string outputPath, out BattleVideoExportService.ExportResult result)
@@ -417,29 +444,21 @@ namespace TPD.Arena
 
             battleDuration = timelineEvents[timelineEvents.Count - 1].timestamp;
 
-            timelineSlider.minValue = 0f;
+            if (!miniAppPlayback)
+            {
+                timelineSlider.minValue = 0f;
+                timelineSlider.maxValue = battleDuration;
+                timelineSlider.value = 0f;
 
-            timelineSlider.maxValue = battleDuration;
+                player1TimelineContainer.gameObject.SetActive(true);
+                player2TimelineContainer.gameObject.SetActive(true);
+                timelineSlider.gameObject.SetActive(true);
+                startBattleButton.gameObject.SetActive(true);
+                startBattleButton.interactable = true;
 
-            timelineSlider.value = 0f;
-
-
-
-            player1TimelineContainer.gameObject.SetActive(true);
-
-            player2TimelineContainer.gameObject.SetActive(true);
-
-            timelineSlider.gameObject.SetActive(true);
-
-            startBattleButton.gameObject.SetActive(true);
-
-            startBattleButton.interactable = true;
-
-
-
-            BuildTimelineBar(1, player1TimelineContainer);
-
-            BuildTimelineBar(2, player2TimelineContainer);
+                BuildTimelineBar(1, player1TimelineContainer);
+                BuildTimelineBar(2, player2TimelineContainer);
+            }
 
 
 

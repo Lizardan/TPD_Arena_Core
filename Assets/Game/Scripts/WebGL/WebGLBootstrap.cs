@@ -1,9 +1,12 @@
+using System;
+using System.Collections;
+using System.Text;
 using UnityEngine;
 
 namespace TPD.Arena
 {
     /// <summary>
-    /// Reads arena/session query params when running as Telegram Mini App WebGL build.
+    /// Reads battle JSON from URL when running as Telegram Mini App WebGL build.
     /// </summary>
     public class WebGLBootstrap : MonoBehaviour
     {
@@ -17,19 +20,48 @@ namespace TPD.Arena
 #endif
         }
 
-        private void Start()
+        private IEnumerator Start()
         {
+            yield return null;
+
             string url = Application.absoluteURL;
             if (string.IsNullOrEmpty(url))
-                return;
+                yield break;
+
+            string battleParam = ReadQueryParam(url, "battle");
+            if (string.IsNullOrEmpty(battleParam))
+            {
+                Debug.Log("[WebGL] No battle param in URL — manual mode.");
+                yield break;
+            }
+
+            string json = DecodeBase64Url(battleParam);
+            if (string.IsNullOrEmpty(json))
+            {
+                Debug.LogError("[WebGL] Failed to decode battle param.");
+                yield break;
+            }
+
+            BattleRequestJson request = BattleRequestJson.Parse(json, out string error);
+            if (request == null)
+            {
+                Debug.LogError($"[WebGL] {error}");
+                yield break;
+            }
 
             string arena = ReadQueryParam(url, "arena");
-            string session = ReadQueryParam(url, "session");
-
+            string host = ReadQueryParam(url, "host");
             if (!string.IsNullOrEmpty(arena))
-                Debug.Log($"[WebGL] arena={arena}");
-            if (!string.IsNullOrEmpty(session))
-                Debug.Log($"[WebGL] session={session}");
+                Debug.Log($"[WebGL] arena={arena} host={host}");
+
+            BattleController controller = FindFirstObjectByType<BattleController>();
+            if (controller == null)
+            {
+                Debug.LogError("[WebGL] BattleController not found.");
+                yield break;
+            }
+
+            controller.RunFromTelegramRequest(request);
         }
 
         private static string ReadQueryParam(string absoluteUrl, string key)
@@ -44,10 +76,34 @@ namespace TPD.Arena
             foreach (string part in parts)
             {
                 if (part.StartsWith(prefix))
-                    return System.Uri.UnescapeDataString(part.Substring(prefix.Length));
+                    return Uri.UnescapeDataString(part.Substring(prefix.Length));
             }
 
             return null;
+        }
+
+        private static string DecodeBase64Url(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return null;
+
+            try
+            {
+                string padded = value.Replace('-', '+').Replace('_', '/');
+                switch (padded.Length % 4)
+                {
+                    case 2: padded += "=="; break;
+                    case 3: padded += "="; break;
+                }
+
+                byte[] bytes = Convert.FromBase64String(padded);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[WebGL] base64 decode failed: {ex.Message}");
+                return null;
+            }
         }
     }
 }

@@ -41,8 +41,9 @@ function emptyDir(dir) {
 
 fs.mkdirSync(publicRoot, { recursive: true });
 
-// Telegram shell → Mini App entry (redirects into Unity WebGL under /game/)
+// Telegram shell → Mini App entry (lobby, then Unity WebGL)
 copyFile(path.join(webAppRoot, "shell-index.html"), path.join(publicRoot, "index.html"));
+copyFile(path.join(webAppRoot, "arena-lobby.js"), path.join(publicRoot, "arena-lobby.js"));
 
 // Legacy JS fallback (optional dev / until Unity handles all flows)
 const legacyFiles = ["styles.css", "app.js", "battle-sim.js", "battle-renderer.js"];

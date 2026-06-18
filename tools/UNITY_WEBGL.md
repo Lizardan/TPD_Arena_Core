@@ -9,14 +9,16 @@ GitHub Actions (main)
   → game-ci unity-builder (WebGL)
   → copy to tools/cloudflare/public/game/
   → wrangler pages deploy
-  → https://tpd-arena.pages.dev/game/
 
-Telegram opens:
-  https://tpd-arena.pages.dev/?arena=<id>
-  or t.me/TPD_Arena_bot?startapp=<arenaId>
-  → shell index.html passes arena/session into /game/index.html
-  → Unity WebGLBootstrap reads query params
+Telegram group arena:
+  /arena → кнопка «Войти на арену»
+  → https://tpd-arena.pages.dev/?arena=<id>
+  → lobby (arena-lobby.js): ждёт 2-го игрока, poll API
+  → когда оба есть: /game/index.html?battle=<base64 json>&arena=<id>
+  → Unity WebGLBootstrap декодирует JSON → RunFromTelegramRequest → бой
 ```
+
+No realtime sync in Unity — identical JSON → identical simulation.
 
 ## GitHub Secrets (Unity license)
 
@@ -67,7 +69,7 @@ npm run deploy
 ## WebGL limitations (current)
 
 - **FFmpeg export** is disabled on WebGL (`#if !UNITY_WEBGL`). Battle plays in-engine; MP4 upload to Telegram will be added via JS interop / WebCodecs later.
-- `WebGLBootstrap` logs `arena` / `session` from URL — arena API wiring is the next step in Unity.
+- `WebGLBootstrap` reads `battle` (base64url JSON), `arena`, `host` from URL and auto-starts the fight.
 
 ## BotFather
 

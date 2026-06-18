@@ -9,36 +9,67 @@
     <title>TPD Arena</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        background: #0d111c;
-        color: #e8ecf8;
-        font-family: system-ui, sans-serif;
+        min-height: 100vh;
         display: grid;
         place-items: center;
-        min-height: 100vh;
+        padding: 24px;
+        background: radial-gradient(circle at top, #1a2744 0%, #0d111c 55%);
+        color: #e8ecf8;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .card {
+        width: min(100%, 360px);
+        text-align: center;
+      }
+      .logo {
+        font-size: 1.4rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        margin-bottom: 1.5rem;
+      }
+      #status {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+      }
+      #detail {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: #9aa8c7;
+        white-space: pre-line;
+        min-height: 3rem;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        margin: 1.5rem auto 0;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #6ea8ff;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>
   <body>
-    <p>Загрузка игры…</p>
-    <script>
-      const tg = window.Telegram?.WebApp;
-      if (tg) {
-        tg.ready();
-        tg.expand();
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const arena = params.get("arena") || tg?.initDataUnsafe?.start_param;
-      const session = params.get("session");
-
-      const gameParams = new URLSearchParams();
-      if (arena) gameParams.set("arena", arena);
-      if (session) gameParams.set("session", session);
-
-      const query = gameParams.toString();
-      window.location.replace("/game/index.html" + (query ? "?" + query : ""));
-    </script>
+    <div class="card">
+      <div class="logo">TPD Arena</div>
+      <div id="status">Загрузка…</div>
+      <div id="detail"></div>
+      <div class="spinner" aria-hidden="true"></div>
+    </div>
+    <script type="module" src="/arena-lobby.js"></script>
   </body>
 </html>

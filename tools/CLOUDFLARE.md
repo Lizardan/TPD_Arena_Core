@@ -81,10 +81,11 @@ Workflow **Deploy Cloudflare** will:
 ### 6. Test group arena
 
 1. In group: `/arena`
-2. First two users tap **Войти на арену** → become fighters
-3. Others tap **Смотреть бой** → spectators
-4. Battle plays in real time in Mini App; first entrant encodes MP4
-5. Video appears in group chat when battle ends
+2. **Player 1** taps **Войти на арену** → lobby screen «Ждём правого бойца…» (Unity **не** грузится)
+3. **Player 2** taps **Войти на арену** → bot forms battle JSON (`100/100` HP stub) → both redirect to Unity WebGL with same JSON in URL
+4. Both see the **same deterministic battle** (no networking inside Unity)
+5. Others tap **Смотреть бой** → spectators, same JSON / same playback
+6. Video upload to chat (host only) — coming soon for WebGL
 
 ### 7. Test solo (DM)
 
