@@ -20,9 +20,11 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 | Secret | Value |
 |--------|--------|
-| `CLOUDFLARE_API_TOKEN` | from step 1 |
-| `CLOUDFLARE_ACCOUNT_ID` | from step 1 |
+| `CLOUDFLARE_API_TOKEN` | API token (`cfut_...` or legacy format) |
+| `CLOUDFLARE_ACCOUNT_ID` | **Account ID** from dashboard sidebar (32 hex chars) — **not** Zone ID |
 | `TELEGRAM_BOT_TOKEN` | from [@BotFather](https://t.me/BotFather) |
+
+**Important for `cfut_` tokens:** Account ID is required. Find it on the Cloudflare dashboard home page, right column — labeled **Account ID** (not under a domain/zone).
 
 Remove obsolete items if present: `API_BASE_URL` variable, Render secrets.
 

@@ -33,13 +33,19 @@ jobs:
         working-directory: tools/cloudflare
         run: npm run copy-web-app
 
+      - name: Verify Cloudflare credentials
+        working-directory: tools/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler whoami
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=tpd-arena
-          workingDirectory: tools/cloudflare
+        working-directory: tools/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy public --project-name=tpd-arena --commit-dirty=true
 
       - name: Set Telegram bot token on Pages
         working-directory: tools/cloudflare
