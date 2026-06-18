@@ -3,7 +3,7 @@ const WIDTH = 512;
 const HEIGHT = 512;
 
 export class BattleRenderer {
-  constructor(canvas, battle) {
+  constructor(canvas, battle, labels = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.battle = battle;
@@ -11,9 +11,10 @@ export class BattleRenderer {
     this.duration = battle.duration;
     this.leftMax = battle.leftHp;
     this.rightMax = battle.rightHp;
+    this.leftLabel = labels.left || "ЛЕВЫЙ";
+    this.rightLabel = labels.right || "ПРАВЫЙ";
     this.canvas.width = WIDTH;
     this.canvas.height = HEIGHT;
-    this.floatingTexts = [];
   }
 
   frameCount() {
@@ -52,7 +53,7 @@ export class BattleRenderer {
       if (event.eventType === "BattleStart") state.banner = "Бой";
       if (event.eventType === "BattleEnd") state.banner = event.label || "Конец боя";
       if (event.eventType === "StartCasting") {
-        state.banner = `P${event.actorPlayer}: ${event.abilityName}`;
+        state.banner = `${event.actorPlayer === 1 ? this.leftLabel : this.rightLabel}: ${event.abilityName}`;
       }
     }
 
@@ -70,8 +71,8 @@ export class BattleRenderer {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    this.#drawFighter(120, 290, "#4ea1ff", state.p1Hp, this.leftMax, state.p1Shield, "ЛЕВЫЙ");
-    this.#drawFighter(392, 290, "#ff6b6b", state.p2Hp, this.rightMax, state.p2Shield, "ПРАВЫЙ");
+    this.#drawFighter(120, 290, "#4ea1ff", state.p1Hp, this.leftMax, state.p1Shield, this.leftLabel);
+    this.#drawFighter(392, 290, "#ff6b6b", state.p2Hp, this.rightMax, state.p2Shield, this.rightLabel);
 
     if (state.lastHit && state.lastHit.until >= time) {
       const x = state.lastHit.target === 1 ? 120 : 392;
@@ -117,29 +118,75 @@ export class BattleRenderer {
     ctx.fillStyle = "#cbd5f1";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, x, y + 58);
+    const shortLabel = label.length > 14 ? `${label.slice(0, 12)}…` : label;
+    ctx.fillText(shortLabel, x, y + 58);
     ctx.fillText(`${hp}/${maxHp}`, x, y + 74);
   }
 }
 
-export async function recordBattleVideo(canvas, battle, onProgress) {
-  const renderer = new BattleRenderer(canvas, battle);
+/**
+ * Real-time playback (1x) with optional parallel max-speed MP4 encode on host.
+ */
+export async function playAndEncodeBattle(canvas, battle, options = {}) {
+  const {
+    battleStartAt,
+    isHost = false,
+    labels = {},
+    onProgress,
+    onStatus,
+  } = options;
+
+  const renderer = new BattleRenderer(canvas, battle, labels);
   const frameCount = renderer.frameCount();
 
-  if (typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
-    try {
-      return await recordMp4WebCodecs(renderer, frameCount, battle, onProgress);
-    } catch (error) {
-      console.warn("WebCodecs MP4 encode failed:", error);
-    }
+  let encodePromise = null;
+  if (isHost) {
+    const offscreen = document.createElement("canvas");
+    const encodeRenderer = new BattleRenderer(offscreen, battle, labels);
+    encodePromise = encodeAllFramesFast(encodeRenderer, battle, frameCount);
   }
 
-  const mp4Mime = pickMp4MimeType();
-  if (mp4Mime) {
+  if (battleStartAt) {
+    await waitUntil(battleStartAt);
+  }
+
+  await playRealtime(renderer, battle.duration, onProgress);
+
+  if (!isHost) return null;
+
+  onStatus?.("Сохраняем видео...");
+  return encodePromise;
+}
+
+async function playRealtime(renderer, duration, onProgress) {
+  return new Promise((resolve) => {
+    const startMs = performance.now();
+
+    const tick = () => {
+      const elapsed = (performance.now() - startMs) / 1000;
+      const time = Math.min(elapsed, duration);
+      renderer.renderAt(time);
+
+      const frameIndex = Math.floor(time * FPS);
+      onProgress?.(frameIndex, Math.ceil(duration * FPS));
+
+      if (time >= duration) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  });
+}
+
+async function encodeAllFramesFast(renderer, battle, frameCount) {
+  if (typeof VideoEncoder !== "undefined" && typeof VideoFrame !== "undefined") {
     try {
-      return await recordMp4MediaRecorder(canvas, renderer, frameCount, battle, mp4Mime, onProgress);
+      return await encodeMp4WebCodecs(renderer, frameCount, battle);
     } catch (error) {
-      console.warn("MediaRecorder MP4 encode failed:", error);
+      console.warn("WebCodecs fast encode failed:", error);
     }
   }
 
@@ -148,16 +195,18 @@ export async function recordBattleVideo(canvas, battle, onProgress) {
   );
 }
 
-async function recordMp4WebCodecs(renderer, frameCount, battle, onProgress) {
+export async function recordBattleVideo(canvas, battle, onProgress) {
+  const renderer = new BattleRenderer(canvas, battle);
+  const frameCount = renderer.frameCount();
+  return encodeMp4WebCodecs(renderer, frameCount, battle, onProgress);
+}
+
+async function encodeMp4WebCodecs(renderer, frameCount, battle, onProgress) {
   const { Muxer, ArrayBufferTarget } = await import("https://esm.sh/mp4-muxer@5.1.3");
 
   const muxer = new Muxer({
     target: new ArrayBufferTarget(),
-    video: {
-      codec: "avc",
-      width: WIDTH,
-      height: HEIGHT,
-    },
+    video: { codec: "avc", width: WIDTH, height: HEIGHT },
     fastStart: "in-memory",
   });
 
@@ -184,7 +233,6 @@ async function recordMp4WebCodecs(renderer, frameCount, battle, onProgress) {
   }
 
   encoder.configure(config);
-
   const frameDurationUs = Math.round(1_000_000 / FPS);
 
   for (let i = 0; i <= frameCount; i++) {
@@ -214,41 +262,10 @@ async function recordMp4WebCodecs(renderer, frameCount, battle, onProgress) {
   return new Blob([muxer.target.buffer], { type: "video/mp4" });
 }
 
-async function recordMp4MediaRecorder(canvas, renderer, frameCount, battle, mimeType, onProgress) {
-  const stream = canvas.captureStream(0);
-  const recorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: 2_500_000,
-  });
-
-  const chunks = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-
-  const stopped = new Promise((resolve, reject) => {
-    recorder.onerror = () => reject(new Error("Ошибка MediaRecorder."));
-    recorder.onstop = () => resolve(new Blob(chunks, { type: "video/mp4" }));
-  });
-
-  recorder.start();
-  const frameDelayMs = 1000 / FPS;
-
-  for (let i = 0; i <= frameCount; i++) {
-    const time = Math.min(i / FPS, battle.duration);
-    renderer.renderAt(time);
-    stream.getVideoTracks()[0]?.requestFrame?.();
-    onProgress?.(i, frameCount);
-    await sleep(frameDelayMs);
-  }
-
-  recorder.stop();
-  return stopped;
-}
-
-function pickMp4MimeType() {
-  const candidates = ["video/mp4;codecs=avc1", "video/mp4"];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || null;
+function waitUntil(timestampMs) {
+  const delay = timestampMs - Date.now();
+  if (delay <= 0) return Promise.resolve();
+  return sleep(delay);
 }
 
 function sleep(ms) {

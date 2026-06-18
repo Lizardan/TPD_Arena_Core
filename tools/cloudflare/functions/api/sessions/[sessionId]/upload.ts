@@ -27,16 +27,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const form = await context.request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) {
+  const rawFile = form.get("file");
+  if (!rawFile || typeof rawFile === "string") {
     return errorResponse("Missing video file.", 400);
   }
+  const file = rawFile as Blob;
 
   if (file.size > MAX_UPLOAD_BYTES) {
     return errorResponse("Video file is too large.", 413);
   }
 
-  const filename = file.name || `battle-${sessionId}.mp4`;
+  const filename = `battle-${sessionId}.mp4`;
   const caption = `Бой: ${session.battle.leftHp} HP против ${session.battle.rightHp} HP`;
 
   try {

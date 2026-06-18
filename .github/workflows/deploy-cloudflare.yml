@@ -49,6 +49,13 @@ jobs:
           PAGES_PRODUCTION_BRANCH: main
         run: node scripts/ensure-pages-project.mjs
 
+      - name: Ensure Arena KV namespace
+        working-directory: tools/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/ensure-arena-kv.mjs
+
       - name: Set Telegram bot token on Pages
         working-directory: tools/cloudflare
         env:

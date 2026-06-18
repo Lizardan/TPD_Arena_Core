@@ -4,3 +4,8 @@ pages_build_output_dir = "public"
 
 [vars]
 WEB_APP_URL = "https://tpd-arena.pages.dev"
+# STATS_API_URL = "https://friend-server.example/stats"
+
+[[kv_namespaces]]
+binding = "ARENA_KV"
+id = "00000000000000000000000000000000"

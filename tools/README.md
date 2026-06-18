@@ -10,9 +10,17 @@ Live URL: `https://tpd-arena.pages.dev`
 
 ## How it works
 
+**Group arena (main flow):**
+
 ```
-/battle JSON → Telegram webhook → Web App button
-Web App renders on user's device → POST /api/upload → video in chat
+/arena in group → waiting for 2 fighters → realtime battle in Mini App
+First entrant encodes MP4 in parallel → video posted to group chat
+```
+
+**Solo (DM):**
+
+```
+/battle JSON → Web App → render → video in chat
 ```
 
 ## Project layout
