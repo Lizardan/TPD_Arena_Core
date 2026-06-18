@@ -25,11 +25,13 @@ Or run batchmode from the project root:
 - Target: `StandaloneLinux64`
 - Binary: `build/StandaloneLinux64/TPD_Arena_Core.x86_64`
 
-Manual render on Linux:
+Manual render on Linux (artifact contents):
 
 ```bash
+BINARY_DIR=path/to/extracted/battle-renderer
+cd "$BINARY_DIR"
 chmod +x TPD_Arena_Core.x86_64
-./TPD_Arena_Core.x86_64 -batchmode -nographics -logFile - \
+xvfb-run --auto-servernum ./TPD_Arena_Core.x86_64 -batchmode -nographics -logFile - \
   -executeMethod TPD.Arena.BattleExportCli.Run \
   -exportJson /path/to/request.json \
   -output /path/to/battle.mp4

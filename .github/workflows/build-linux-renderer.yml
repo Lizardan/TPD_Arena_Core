@@ -40,7 +40,6 @@ jobs:
             Library-linux-v1-
 
       - name: Build Standalone Linux64
-        id: unity_build
         uses: game-ci/unity-builder@v5
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -51,12 +50,6 @@ jobs:
           buildsPath: build
           buildName: TPD_Arena_Core
           customParameters: -nographics -ignoreAudio
-
-      - name: List build output
-        if: always()
-        run: |
-          echo "=== build/ ==="
-          find build -maxdepth 3 -type f 2>/dev/null | head -50 || ls -laR build 2>/dev/null || true
 
       - name: Upload battle renderer artifact
         uses: actions/upload-artifact@v4

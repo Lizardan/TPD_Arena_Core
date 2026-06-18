@@ -30,8 +30,8 @@ jobs:
           path: renderer
           if_no_artifact_found: fail
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg and headless display
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb libgl1
 
       - name: Write battle request JSON
         env:
@@ -42,8 +42,24 @@ jobs:
 
       - name: Render battle MP4
         run: |
-          chmod +x renderer/TPD_Arena_Core.x86_64
-          renderer/TPD_Arena_Core.x86_64 \
+          set -euo pipefail
+          echo "=== renderer layout ==="
+          find renderer -maxdepth 4 \( -type f -o -type d \) | head -80
+
+          BINARY="$(find renderer -type f -name 'TPD_Arena_Core.x86_64' | head -1)"
+          if [ -z "$BINARY" ]; then
+            echo "TPD_Arena_Core.x86_64 not found under renderer/"
+            exit 1
+          fi
+
+          chmod +x "$BINARY"
+          BINARY_DIR="$(dirname "$BINARY")"
+          BINARY_NAME="$(basename "$BINARY")"
+          echo "Using binary: $BINARY"
+
+          cd "$BINARY_DIR"
+          xvfb-run --auto-servernum --server-args='-screen 0 1024x768x24' \
+            "./$BINARY_NAME" \
             -batchmode \
             -nographics \
             -ignoreAudio \
