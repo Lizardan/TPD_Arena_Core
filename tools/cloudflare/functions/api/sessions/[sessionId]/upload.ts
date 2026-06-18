@@ -37,7 +37,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const filename = file.name || `battle-${sessionId}.mp4`;
-  const caption = `Battle: ${session.battle.leftHp} vs ${session.battle.rightHp} HP`;
+  const caption = `Бой: ${session.battle.leftHp} HP против ${session.battle.rightHp} HP`;
 
   try {
     await sendAnimation(token, session.chatId, file, caption, filename);

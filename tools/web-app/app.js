@@ -26,13 +26,13 @@ function setProgress(current, total) {
 
 async function fetchSession() {
   if (!sessionId) {
-    throw new Error("Missing ?session= in URL.");
+    throw new Error("В ссылке нет параметра session.");
   }
 
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || "Session not found.");
+    throw new Error(body.detail || "Сессия не найдена.");
   }
   return response.json();
 }
@@ -48,7 +48,7 @@ async function uploadVideo(blob) {
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || "Upload failed.");
+    throw new Error(body.detail || "Не удалось загрузить видео.");
   }
 }
 
@@ -56,34 +56,34 @@ async function run() {
   startButton.disabled = true;
 
   try {
-    setStatus("Loading battle...");
+    setStatus("Загрузка боя...");
     const session = await fetchSession();
     const { leftHp, rightHp } = session.battle;
 
-    setStatus("Simulating...");
+    setStatus("Симуляция...");
     const battle = simulateBattle(leftHp, rightHp);
 
-    setStatus("Rendering on your device...");
+    setStatus("Рендер на устройстве...");
     const blob = await recordBattleVideo(canvas, battle, setProgress);
 
-    setStatus("Uploading video...");
+    setStatus("Загрузка видео...");
     await uploadVideo(blob);
 
-    setStatus("Done! Returning to chat...");
+    setStatus("Готово! Возвращаемся в чат...");
     if (tg) {
       tg.close();
     } else {
-      setStatus("Video uploaded. You can close this tab.");
+      setStatus("Видео загружено. Можно закрыть вкладку.");
     }
   } catch (error) {
     console.error(error);
-    setStatus(error.message || "Render failed.");
+    setStatus(error.message || "Ошибка рендера.");
     startButton.disabled = false;
   }
 }
 
 if (!sessionId) {
-  setStatus("Open this page from the Telegram bot button.");
+  setStatus("Откройте страницу через кнопку в боте.");
 } else if (tg) {
   run();
 } else {

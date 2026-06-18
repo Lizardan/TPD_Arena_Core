@@ -72,7 +72,7 @@ export function buildWebAppKeyboard(webAppUrl: string) {
     inline_keyboard: [
       [
         {
-          text: "Render battle video",
+          text: "Сгенерировать видео",
           web_app: { url: webAppUrl },
         },
       ],

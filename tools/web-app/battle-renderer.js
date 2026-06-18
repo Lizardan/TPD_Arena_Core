@@ -49,8 +49,8 @@ export class BattleRenderer {
           until: event.timestamp + 0.8,
         };
       }
-      if (event.eventType === "BattleStart") state.banner = "Battle";
-      if (event.eventType === "BattleEnd") state.banner = event.label || "Battle end";
+      if (event.eventType === "BattleStart") state.banner = "Бой";
+      if (event.eventType === "BattleEnd") state.banner = event.label || "Конец боя";
       if (event.eventType === "StartCasting") {
         state.banner = `P${event.actorPlayer}: ${event.abilityName}`;
       }
@@ -70,8 +70,8 @@ export class BattleRenderer {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    this.#drawFighter(120, 290, "#4ea1ff", state.p1Hp, this.leftMax, state.p1Shield, "LEFT");
-    this.#drawFighter(392, 290, "#ff6b6b", state.p2Hp, this.rightMax, state.p2Shield, "RIGHT");
+    this.#drawFighter(120, 290, "#4ea1ff", state.p1Hp, this.leftMax, state.p1Shield, "ЛЕВЫЙ");
+    this.#drawFighter(392, 290, "#ff6b6b", state.p2Hp, this.rightMax, state.p2Shield, "ПРАВЫЙ");
 
     if (state.lastHit && state.lastHit.until >= time) {
       const x = state.lastHit.target === 1 ? 120 : 392;
@@ -144,7 +144,7 @@ export async function recordBattleVideo(canvas, battle, onProgress) {
   }
 
   throw new Error(
-    "This device cannot encode MP4. Open the bot in Telegram on Android or desktop Chrome.",
+    "Это устройство не умеет кодировать MP4. Откройте бота в Telegram на Android или в Chrome на ПК.",
   );
 }
 
@@ -180,7 +180,7 @@ async function recordMp4WebCodecs(renderer, frameCount, battle, onProgress) {
 
   const { supported } = await VideoEncoder.isConfigSupported(config);
   if (!supported) {
-    throw new Error("H.264 encoder is not supported on this device.");
+    throw new Error("Кодек H.264 не поддерживается на этом устройстве.");
   }
 
   encoder.configure(config);
@@ -227,7 +227,7 @@ async function recordMp4MediaRecorder(canvas, renderer, frameCount, battle, mime
   };
 
   const stopped = new Promise((resolve, reject) => {
-    recorder.onerror = () => reject(new Error("MediaRecorder failed."));
+    recorder.onerror = () => reject(new Error("Ошибка MediaRecorder."));
     recorder.onstop = () => resolve(new Blob(chunks, { type: "video/mp4" }));
   });
 

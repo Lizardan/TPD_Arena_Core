@@ -25,7 +25,7 @@ export function simulateBattle(leftHp, rightHp) {
     });
   };
 
-  push("BattleStart", 0, 0, { label: "Battle begins" });
+  push("BattleStart", 0, 0, { label: "Бой начался" });
 
   while (p1Hp > 0 && p2Hp > 0 && time < 120) {
     const actor = turn % 2 === 1 ? 1 : 2;
@@ -70,7 +70,9 @@ export function simulateBattle(leftHp, rightHp) {
   }
 
   const winner = p1Hp > 0 && p2Hp <= 0 ? 1 : p2Hp > 0 && p1Hp <= 0 ? 2 : 0;
-  push("BattleEnd", winner, winner, { label: winner ? `Player ${winner} wins` : "Draw" });
+  push("BattleEnd", winner, winner, {
+    label: winner ? `Победил игрок ${winner}` : "Ничья",
+  });
 
   return {
     leftHp,

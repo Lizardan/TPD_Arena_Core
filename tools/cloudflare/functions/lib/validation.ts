@@ -10,7 +10,7 @@ export interface BattlePayload {
 
 export function validateBattlePayload(payload: unknown): BattlePayload {
   if (!payload || typeof payload !== "object") {
-    throw new Error("Battle JSON must be an object.");
+    throw new Error("JSON боя должен быть объектом.");
   }
 
   const record = payload as Record<string, unknown>;
@@ -18,7 +18,7 @@ export function validateBattlePayload(payload: unknown): BattlePayload {
   const rightHp = record.rightHp;
 
   if (!Number.isInteger(leftHp) || !Number.isInteger(rightHp)) {
-    throw new Error("leftHp and rightHp must be integers.");
+    throw new Error("leftHp и rightHp должны быть целыми числами.");
   }
 
   if (
@@ -27,7 +27,7 @@ export function validateBattlePayload(payload: unknown): BattlePayload {
     (rightHp as number) < MIN_HP ||
     (rightHp as number) > MAX_HP
   ) {
-    throw new Error(`HP must be between ${MIN_HP} and ${MAX_HP}.`);
+    throw new Error(`HP должны быть от ${MIN_HP} до ${MAX_HP}.`);
   }
 
   const battle: BattlePayload = {
@@ -42,7 +42,7 @@ export function validateBattlePayload(payload: unknown): BattlePayload {
       !Array.isArray(abilities) ||
       !abilities.every((item) => typeof item === "string")
     ) {
-      throw new Error(`${side} must be an array of strings.`);
+      throw new Error(`${side} должен быть массивом строк.`);
     }
     battle[side] = abilities;
   }
@@ -55,7 +55,7 @@ export function validateBattleJson(raw: string): BattlePayload {
   try {
     payload = JSON.parse(raw);
   } catch {
-    throw new Error("Invalid JSON.");
+    throw new Error("Некорректный JSON.");
   }
   return validateBattlePayload(payload);
 }
@@ -63,7 +63,7 @@ export function validateBattleJson(raw: string): BattlePayload {
 export function extractJsonFromMessage(text: string): BattlePayload {
   let trimmed = text.trim();
   if (!trimmed) {
-    throw new Error('Send JSON after /battle, e.g. /battle {"leftHp":80,"rightHp":100}');
+    throw new Error('Отправьте JSON после /battle, например:\n/battle {"leftHp":80,"rightHp":100}');
   }
 
   if (trimmed.startsWith("/battle")) {
@@ -72,7 +72,7 @@ export function extractJsonFromMessage(text: string): BattlePayload {
 
   const match = trimmed.match(/\{[\s\S]*\}/);
   if (!match) {
-    throw new Error("Could not find JSON object in message.");
+    throw new Error("Не удалось найти JSON-объект в сообщении.");
   }
 
   return validateBattleJson(match[0]);

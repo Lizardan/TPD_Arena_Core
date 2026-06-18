@@ -1,28 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>TPD Arena Render</title>
+    <title>TPD Arena — рендер</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <main class="app">
       <h1>TPD Arena</h1>
-      <p class="subtitle">Battle video renders on your device, then uploads to the chat.</p>
+      <p class="subtitle">Видео боя рендерится на вашем устройстве и отправляется в чат.</p>
 
       <div class="canvas-wrap">
-        <canvas id="battle-canvas" width="512" height="512" aria-label="Battle preview"></canvas>
+        <canvas id="battle-canvas" width="512" height="512" aria-label="Превью боя"></canvas>
       </div>
 
-      <div id="status" class="status">Ready.</div>
+      <div id="status" class="status">Готово.</div>
       <div id="progress" class="progress"></div>
 
-      <button id="start-btn" type="button">Render battle video</button>
+      <button id="start-btn" type="button">Сгенерировать видео</button>
 
       <p class="hint">
-        Keep this screen open until upload completes. Rendering uses your GPU/CPU locally.
+        Не закрывайте экран до завершения загрузки. Рендер идёт на вашем GPU/CPU.
       </p>
     </main>
 
