@@ -14,6 +14,15 @@ interface JoinBody {
   initData?: string;
 }
 
+function isMobileArenaClient(platformHeader: string, userAgent: string): boolean {
+  const platform = platformHeader.toLowerCase();
+  if (platform === "android" || platform === "ios") {
+    return true;
+  }
+  const ua = userAgent.toLowerCase();
+  return /android|iphone|ipad|ipod|mobile/.test(ua);
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const token = context.env.TELEGRAM_BOT_TOKEN?.trim().replace(/\r/g, "") ?? "";
   if (!token) {
@@ -43,6 +52,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     "";
   if (!initData) {
     return errorResponse("initData is required.", 400);
+  }
+
+  const platformHeader = context.request.headers.get("X-Telegram-Platform") || "";
+  const userAgent = context.request.headers.get("User-Agent") || "";
+  if (isMobileArenaClient(platformHeader, userAgent)) {
+    return errorResponse("Арена доступна только с ПК (Telegram Desktop/Web).", 403);
   }
 
   const verified = await verifyWebAppInitDataDetailed(initData, token);
@@ -98,7 +113,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             result.arena.player2.displayName,
             result.arena.id,
           ),
-          buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой", miniApp),
+          buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой (ПК)", miniApp),
         );
       } catch (error) {
         console.warn("editMessageText (fighting) failed:", error);
@@ -114,7 +129,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           result.arena.chatId,
           result.arena.messageId,
           arenaWaitingText(result.arena.openerName, result.arena.player1, result.arena.id),
-          buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену", miniApp),
+          buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену (ПК)", miniApp),
         );
       } catch (error) {
         console.warn("editMessageText (waiting) failed:", error);

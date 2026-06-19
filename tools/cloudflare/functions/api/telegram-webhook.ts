@@ -126,7 +126,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (existing) {
-        const buttonText = existing.status === "fighting" ? "Смотреть бой" : "Войти на арену";
+        const buttonText =
+          existing.status === "fighting" ? "Смотреть бой (ПК)" : "Войти на арену (ПК)";
         await sendMessage(
           token,
           chatId,
@@ -146,7 +147,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         token,
         chatId,
         arenaWaitingText(openerName, null, arena.id),
-        buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену", miniApp),
+        buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену (ПК)", miniApp),
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);

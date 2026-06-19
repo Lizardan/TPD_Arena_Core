@@ -1,7 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { verifySessionId } from "../../../lib/session";
-import { sendAnimation } from "../../../lib/telegram";
+import { sendVideo } from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -47,11 +47,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Video file is too large.", 413);
   }
 
-  const filename = `battle-${sessionId}.mp4`;
+  const isWebm = file.type.toLowerCase().includes("webm");
+  const ext = isWebm ? "webm" : "mp4";
+  const filename = `battle-${sessionId}.${ext}`;
   const caption = `Бой: ${session.battle.leftHp} HP против ${session.battle.rightHp} HP`;
 
   try {
-    await sendAnimation(token, session.chatId, file, caption, filename);
+    await sendVideo(token, session.chatId, file, caption, filename);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send video.";
     return errorResponse(message, 502);

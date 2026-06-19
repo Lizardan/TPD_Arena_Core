@@ -163,18 +163,21 @@ export function arenaWaitingText(
   arenaId?: string,
 ): string {
   const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
+  const desktopOnly = `\n\nАрена доступна только с ПК: Telegram Desktop или web.telegram.org.`;
   if (!player1) {
     return (
       `${openerName} открыл арену.${codeLine}\n\n` +
       `Ждём двух бойцов. Оба нажимают кнопку ниже в этом сообщении.\n` +
-      `Не отправляйте /arena повторно — иначе откроется другая арена.`
+      `Не отправляйте /arena повторно — иначе откроется другая арена.` +
+      desktopOnly
     );
   }
   return (
     `${openerName} открыл арену.${codeLine}\n\n` +
     `Левый боец: ${player1.displayName}\n` +
     `Ждём правого бойца…\n\n` +
-    `Второй боец — кнопка в этом же сообщении.`
+    `Второй боец — кнопка в этом же сообщении.` +
+    desktopOnly
   );
 }
 
@@ -193,12 +196,14 @@ export function arenaAlreadyOpenText(arena: {
   player1: { displayName: string } | null;
   player2: { displayName: string } | null;
 }): string {
+  const desktopOnly = `\n\nАрена доступна только с ПК: Telegram Desktop или web.telegram.org.`;
   if (arena.status === "fighting" && arena.player1 && arena.player2) {
     return (
       `В этой группе уже идёт бой.\n` +
       `Код арены: ${arena.id}\n` +
       `${arena.player1.displayName} против ${arena.player2.displayName}\n\n` +
-      `Дождитесь окончания или нажмите кнопку ниже, чтобы смотреть.`
+      `Дождитесь окончания или нажмите кнопку ниже, чтобы смотреть.` +
+      desktopOnly
     );
   }
   const p1 = arena.player1?.displayName;
@@ -207,7 +212,8 @@ export function arenaAlreadyOpenText(arena: {
     `Код арены: ${arena.id}\n` +
     (p1 ? `Левый боец: ${p1}\n` : "") +
     `Ждём правого бойца…\n\n` +
-    `Не отправляйте /arena снова — оба бойца нажимают кнопку в сообщении с этим кодом.`
+    `Не отправляйте /arena снова — оба бойца нажимают кнопку в сообщении с этим кодом.` +
+    desktopOnly
   );
 }
 

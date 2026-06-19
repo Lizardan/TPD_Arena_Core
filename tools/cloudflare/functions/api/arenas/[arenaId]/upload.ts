@@ -1,7 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { getArena, markArenaDone } from "../../../lib/arena-store";
-import { arenaAnimationCaption, sendAnimation } from "../../../lib/telegram";
+import { arenaAnimationCaption, sendVideo } from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -57,13 +57,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Video file is too large.", 413);
   }
 
-  const filename = `arena-${arenaId}.mp4`;
+  const isWebm = file.type.toLowerCase().includes("webm");
+  const ext = isWebm ? "webm" : "mp4";
+  const filename = `arena-${arenaId}.${ext}`;
   const p1 = arena.player1?.displayName || "Игрок 1";
   const p2 = arena.player2?.displayName || "Игрок 2";
   const caption = arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
 
   try {
-    await sendAnimation(token, arena.chatId, file, caption, filename);
+    await sendVideo(token, arena.chatId, file, caption, filename);
     await markArenaDone(kv, arenaId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send video.";

@@ -5,7 +5,6 @@ mergeInto(LibraryManager.library, {
         window.TPDMiniAppRecorder.onBattleStarted();
       }
     } catch (e) {
-      console.warn("[TPD bridge] onBattleStarted failed:", e);
     }
   },
 
@@ -15,7 +14,6 @@ mergeInto(LibraryManager.library, {
         window.TPDMiniAppRecorder.onBattleFinished();
       }
     } catch (e) {
-      console.warn("[TPD bridge] onBattleFinished failed:", e);
     }
   },
 });

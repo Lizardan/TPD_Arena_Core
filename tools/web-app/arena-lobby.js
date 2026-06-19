@@ -25,7 +25,11 @@ function setDetail(text) {
 
 function initDataHeader() {
   const initData = tg?.initData;
-  return initData ? { "X-Telegram-Init-Data": initData } : {};
+  const platform = tg?.platform || "";
+  const headers = {};
+  if (initData) headers["X-Telegram-Init-Data"] = initData;
+  if (platform) headers["X-Telegram-Platform"] = platform;
+  return headers;
 }
 
 function sleep(ms) {
@@ -38,6 +42,12 @@ function encodeBattleParam(battle) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function isDesktopTelegramPlatform() {
+  const platform = (tg?.platform || "").toLowerCase();
+  if (!platform) return false;
+  return ["tdesktop", "macos", "web", "weba", "webk", "unigram"].includes(platform);
 }
 
 function roleStatusText(arena) {
@@ -81,13 +91,6 @@ function waitingDetail(arena) {
     return text;
   }
   return "Ждём первого бойца…";
-}
-
-function lobbyDebugLine(arena) {
-  const parts = [arena.status];
-  if (arena.id) parts.push(`код:${arena.id}`);
-  if (arena.player2) parts.push("p2:ok");
-  return parts.join(" · ");
 }
 
 function fightingDetail(arena) {
@@ -154,14 +157,14 @@ async function runArenaLobby(id) {
   setStatus("Вход на арену…");
   let arena = await joinArena(id);
   setStatus(roleStatusText(arena));
-  setDetail(`${waitingDetail(arena)}\n${lobbyDebugLine(arena)}`);
+  setDetail(waitingDetail(arena));
 
   while (arena.status === "waiting") {
     await sleep(1500);
     // POST /join (idempotent) — надёжнее GET с initData в заголовке
     arena = await joinArena(id);
     setStatus(roleStatusText(arena));
-    setDetail(`${waitingDetail(arena)}\n${lobbyDebugLine(arena)}`);
+    setDetail(waitingDetail(arena));
   }
 
   if (arena.status === "fighting" && arena.battle) {
@@ -204,6 +207,11 @@ async function main() {
     }
 
     if (arenaId && !params.get("battle")) {
+      if (!isDesktopTelegramPlatform()) {
+        setStatus("Арена доступна только с ПК.");
+        setDetail("Откройте кнопку в Telegram Desktop или web.telegram.org на компьютере.");
+        return;
+      }
       await runArenaLobby(arenaId);
       return;
     }

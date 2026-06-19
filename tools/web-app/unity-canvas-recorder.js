@@ -3,17 +3,65 @@
   const arenaId = params.get("arena");
   const sessionId = params.get("session");
   const isHost = params.get("host") === "1";
+  const FRAME_SIZE = 512;
 
   if (!arenaId && !sessionId) {
     return;
   }
 
-  function log(message, data) {
-    if (typeof data === "undefined") {
-      console.log(`[MiniAppRecorder] ${message}`);
-      return;
+  function ensureSquareGameFrame() {
+    const side = Math.max(240, Math.min(FRAME_SIZE, window.innerWidth, window.innerHeight));
+    const styleId = "tpd-square-frame-style";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: #0d111c !important;
+}
+body {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+}
+#unity-container, .unity-container, .webgl-content {
+  width: ${FRAME_SIZE}px !important;
+  height: ${FRAME_SIZE}px !important;
+  aspect-ratio: 1 / 1 !important;
+  margin: 0 auto !important;
+}
+#unity-canvas, canvas#unity-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+`;
+      document.head.appendChild(style);
     }
-    console.log(`[MiniAppRecorder] ${message}`, data);
+
+    const container =
+      document.getElementById("unity-container") ||
+      document.querySelector(".unity-container") ||
+      document.querySelector(".webgl-content");
+    if (container) {
+      container.style.width = `${side}px`;
+      container.style.height = `${side}px`;
+      container.style.aspectRatio = "1 / 1";
+      container.style.maxWidth = `${side}px`;
+      container.style.maxHeight = `${side}px`;
+      container.style.margin = "0 auto";
+    }
+
+    const canvas = resolveCanvas();
+    if (canvas) {
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+    }
   }
 
   function sleep(ms) {
@@ -31,7 +79,6 @@
     if (typeof MediaRecorder === "undefined") return "";
     const candidates = [
       "video/mp4;codecs=h264",
-      "video/webm;codecs=vp9",
       "video/webm;codecs=vp8",
       "video/webm",
     ];
@@ -88,7 +135,6 @@
     let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        log(`Uploading attempt ${attempt} → ${endpoint}`);
         const response = await fetch(endpoint, {
           method: "POST",
           headers,
@@ -98,7 +144,6 @@
           const body = await response.json().catch(() => ({}));
           throw new Error(body.detail || `Upload failed (${response.status})`);
         }
-        log("Upload success");
         if (tg) {
           await sleep(800);
           tg.close();
@@ -106,7 +151,6 @@
         return;
       } catch (error) {
         lastError = error;
-        log("Upload attempt failed", error?.message || error);
         await sleep(attempt * 600);
       }
     }
@@ -121,31 +165,85 @@
     stream: null,
     chunks: [],
     mimeType: "",
+    mirrorCanvas: null,
+    mirrorCtx: null,
+    mirrorRaf: 0,
   };
+
+  function stopMirrorLoop() {
+    if (state.mirrorRaf) {
+      cancelAnimationFrame(state.mirrorRaf);
+      state.mirrorRaf = 0;
+    }
+  }
+
+  function ensureMirrorCanvas() {
+    if (!state.mirrorCanvas) {
+      state.mirrorCanvas = document.createElement("canvas");
+      state.mirrorCanvas.width = FRAME_SIZE;
+      state.mirrorCanvas.height = FRAME_SIZE;
+      state.mirrorCtx = state.mirrorCanvas.getContext("2d", { alpha: false });
+    }
+    return state.mirrorCanvas;
+  }
+
+  function drawCroppedSquare(sourceCanvas) {
+    if (!state.mirrorCtx || !sourceCanvas) return;
+    const srcW = sourceCanvas.width || sourceCanvas.clientWidth || FRAME_SIZE;
+    const srcH = sourceCanvas.height || sourceCanvas.clientHeight || FRAME_SIZE;
+    const square = Math.max(1, Math.min(srcW, srcH));
+    const sx = Math.max(0, Math.floor((srcW - square) / 2));
+    const sy = Math.max(0, Math.floor((srcH - square) / 2));
+
+    state.mirrorCtx.drawImage(
+      sourceCanvas,
+      sx,
+      sy,
+      square,
+      square,
+      0,
+      0,
+      FRAME_SIZE,
+      FRAME_SIZE,
+    );
+  }
+
+  function startMirrorLoop(sourceCanvas) {
+    stopMirrorLoop();
+    const tick = () => {
+      if (!state.recording) return;
+      drawCroppedSquare(sourceCanvas);
+      state.mirrorRaf = requestAnimationFrame(tick);
+    };
+    state.mirrorRaf = requestAnimationFrame(tick);
+  }
 
   async function startRecording() {
     if (state.recording || state.uploadInFlight) return;
 
     if (arenaId && !isHost) {
-      log("Skip recording for non-host arena player");
       return;
     }
 
     if (typeof MediaRecorder === "undefined") {
-      log("MediaRecorder is not available in this WebView");
       return;
     }
 
     const canvas = resolveCanvas();
     if (!canvas || typeof canvas.captureStream !== "function") {
-      log("Unity canvas is not ready for capture");
       return;
     }
 
     try {
-      const stream = canvas.captureStream(30);
+      const mirrorCanvas = ensureMirrorCanvas();
+      drawCroppedSquare(canvas);
+      startMirrorLoop(canvas);
+
+      const stream = mirrorCanvas.captureStream(24);
       const mimeType = resolveMimeType();
-      const recorderOptions = mimeType ? { mimeType } : undefined;
+      const recorderOptions = mimeType
+        ? { mimeType, videoBitsPerSecond: 1_200_000 }
+        : { videoBitsPerSecond: 1_200_000 };
 
       const recorder = new MediaRecorder(stream, recorderOptions);
       state.chunks = [];
@@ -164,20 +262,19 @@
         if (state.uploadInFlight) return;
 
         if (!state.chunks.length) {
-          log("No recorded chunks, nothing to upload");
           return;
         }
 
         state.uploadInFlight = true;
         try {
           const blob = new Blob(state.chunks, { type: state.mimeType });
-          log("Recording complete", { bytes: blob.size, mimeType: state.mimeType });
           await uploadVideoBlob(blob, state.mimeType);
-        } catch (error) {
-          log("Upload after recording failed", error?.message || error);
+        } catch {
+          // keep silent in production; upload API returns user-visible status via bot
         } finally {
           state.uploadInFlight = false;
           state.chunks = [];
+          stopMirrorLoop();
           if (state.stream) {
             for (const track of state.stream.getTracks()) {
               track.stop();
@@ -188,16 +285,17 @@
         }
       };
 
-      recorder.start(1000);
+      recorder.start(250);
       state.recording = true;
-      log("Recording started", { mimeType: state.mimeType, arenaId, sessionId, isHost });
-    } catch (error) {
-      log("Failed to start recording", error?.message || error);
+    } catch {
+      // recorder init can fail on unsupported clients
     }
   }
 
   function stopRecording() {
     if (!state.recording || !state.recorder) return;
+    state.recording = false;
+    stopMirrorLoop();
     if (state.recorder.state !== "inactive") {
       state.recorder.stop();
     }
@@ -208,5 +306,9 @@
     onBattleFinished: stopRecording,
   };
 
-  log("Bridge ready", { arenaId, sessionId, isHost });
+  ensureSquareGameFrame();
+  window.addEventListener("resize", ensureSquareGameFrame);
+  const frameInit = () => ensureSquareGameFrame();
+  setTimeout(frameInit, 300);
+  setTimeout(frameInit, 1000);
 })();
