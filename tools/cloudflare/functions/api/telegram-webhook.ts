@@ -148,6 +148,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const chatId = message.chat.id;
   const rawText = callbackCommand ?? update.message?.text?.trim() ?? "";
+  const isReplyKeyboardAction =
+    rawText === "Создать арену" ||
+    rawText === "Выйти на арену" ||
+    rawText === "Запустить арену" ||
+    rawText === "Остановить арену";
   const text =
     rawText === "Создать арену" || rawText === "Выйти на арену" || rawText === "Запустить арену"
       ? "/start_tpd_arena"
@@ -218,7 +223,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       await answerCallbackQuery(token, callback.id);
     }
 
-    if (command.startsWith("/") || text.startsWith("{")) {
+    if (!isReplyKeyboardAction && (command.startsWith("/") || text.startsWith("{"))) {
       await tryDeleteSourceMessage();
     }
 
@@ -246,17 +251,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           "Команда остановки арены работает в групповом чате.",
           3000,
         );
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
       if (!kv) {
         await sendTemporaryNotice("Арена временно недоступна (KV не настроен).", 3000);
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (!existing) {
         await sendTemporaryNotice("Активной арены сейчас нет.", 3000);
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
@@ -280,6 +288,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         "Текущая арена остановлена. Можно запускать новую.",
         buildBotReplyKeyboard(),
       );
+      await tryDeleteSourceMessage();
       return jsonResponse({ ok: true });
     }
 
@@ -288,11 +297,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         await sendPersistentMessage(
           "Команда /start_tpd_arena работает в групповом чате. Добавьте бота в группу и вызовите арену там.",
         );
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
       if (!kv) {
         await sendPersistentMessage("Арена временно недоступна (KV не настроен).");
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
@@ -307,6 +318,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             ? "Сейчас уже идёт бой. Новая арена будет доступна после отправки видео в чат."
             : "Арена уже открыта и ждёт второго бойца. Новую арену можно запустить после завершения текущей.";
         await sendTemporaryNotice(lockedText, 3000);
+        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
@@ -322,6 +334,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);
+      await tryDeleteSourceMessage();
       return jsonResponse({ ok: true });
     }
 
