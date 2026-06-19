@@ -3,14 +3,22 @@
   const arenaId = params.get("arena");
   const sessionId = params.get("session");
   const isHost = params.get("host") === "1";
-  const FRAME_SIZE = 512;
+  const TARGET_WIDTH = 384;
+  const TARGET_HEIGHT = 590;
+  const TARGET_ASPECT = TARGET_WIDTH / TARGET_HEIGHT;
 
   if (!arenaId && !sessionId) {
     return;
   }
 
-  function ensureSquareGameFrame() {
-    const side = Math.max(240, Math.min(FRAME_SIZE, window.innerWidth, window.innerHeight));
+  function ensureTargetGameFrame() {
+    const scale = Math.min(
+      window.innerWidth / TARGET_WIDTH,
+      window.innerHeight / TARGET_HEIGHT,
+      1,
+    );
+    const frameWidth = Math.max(220, Math.round(TARGET_WIDTH * scale));
+    const frameHeight = Math.max(320, Math.round(TARGET_HEIGHT * scale));
     const styleId = "tpd-square-frame-style";
     if (!document.getElementById(styleId)) {
       const style = document.createElement("style");
@@ -30,9 +38,9 @@ body {
   overflow: hidden !important;
 }
 #unity-container, .unity-container, .webgl-content {
-  width: ${FRAME_SIZE}px !important;
-  height: ${FRAME_SIZE}px !important;
-  aspect-ratio: 1 / 1 !important;
+  width: ${TARGET_WIDTH}px !important;
+  height: ${TARGET_HEIGHT}px !important;
+  aspect-ratio: ${TARGET_WIDTH} / ${TARGET_HEIGHT} !important;
   margin: 0 auto !important;
 }
 #unity-canvas, canvas#unity-canvas {
@@ -49,11 +57,11 @@ body {
       document.querySelector(".unity-container") ||
       document.querySelector(".webgl-content");
     if (container) {
-      container.style.width = `${side}px`;
-      container.style.height = `${side}px`;
-      container.style.aspectRatio = "1 / 1";
-      container.style.maxWidth = `${side}px`;
-      container.style.maxHeight = `${side}px`;
+      container.style.width = `${frameWidth}px`;
+      container.style.height = `${frameHeight}px`;
+      container.style.aspectRatio = `${TARGET_WIDTH} / ${TARGET_HEIGHT}`;
+      container.style.maxWidth = `${frameWidth}px`;
+      container.style.maxHeight = `${frameHeight}px`;
       container.style.margin = "0 auto";
     }
 
@@ -117,6 +125,7 @@ body {
     widget.textContent =
       `inner: ${width} x ${height}\n` +
       `ratio: ${round(ratio)}\n` +
+      `target: ${TARGET_WIDTH} x ${TARGET_HEIGHT}\n` +
       `platform: ${tg?.platform || "-"}\n` +
       `expanded: ${String(Boolean(tg?.isExpanded))}\n` +
       `vpHeight: ${round(tg?.viewportHeight)}\n` +
@@ -138,8 +147,8 @@ body {
     if (typeof MediaRecorder === "undefined") return "";
     const candidates = [
       "video/mp4;codecs=h264",
-      "video/webm;codecs=vp8",
-      "video/webm",
+      "video/mp4;codecs=avc1",
+      "video/mp4",
     ];
     for (const mime of candidates) {
       if (MediaRecorder.isTypeSupported(mime)) return mime;
@@ -148,8 +157,19 @@ body {
   }
 
   function fileExtFromMime(mimeType) {
-    if (mimeType.includes("mp4")) return "mp4";
-    return "webm";
+    return "mp4";
+  }
+
+  function notifyUser(message) {
+    try {
+      if (window.Telegram?.WebApp?.showAlert) {
+        window.Telegram.WebApp.showAlert(message);
+        return;
+      }
+    } catch {}
+    try {
+      alert(message);
+    } catch {}
   }
 
   async function ensureTelegramWebApp() {
@@ -239,31 +259,44 @@ body {
   function ensureMirrorCanvas() {
     if (!state.mirrorCanvas) {
       state.mirrorCanvas = document.createElement("canvas");
-      state.mirrorCanvas.width = FRAME_SIZE;
-      state.mirrorCanvas.height = FRAME_SIZE;
+      state.mirrorCanvas.width = TARGET_WIDTH;
+      state.mirrorCanvas.height = TARGET_HEIGHT;
       state.mirrorCtx = state.mirrorCanvas.getContext("2d", { alpha: false });
     }
     return state.mirrorCanvas;
   }
 
-  function drawCroppedSquare(sourceCanvas) {
+  function drawCroppedFrame(sourceCanvas) {
     if (!state.mirrorCtx || !sourceCanvas) return;
-    const srcW = sourceCanvas.width || sourceCanvas.clientWidth || FRAME_SIZE;
-    const srcH = sourceCanvas.height || sourceCanvas.clientHeight || FRAME_SIZE;
-    const square = Math.max(1, Math.min(srcW, srcH));
-    const sx = Math.max(0, Math.floor((srcW - square) / 2));
-    const sy = Math.max(0, Math.floor((srcH - square) / 2));
+    const srcW = sourceCanvas.width || sourceCanvas.clientWidth || TARGET_WIDTH;
+    const srcH = sourceCanvas.height || sourceCanvas.clientHeight || TARGET_HEIGHT;
+    const srcAspect = srcW / Math.max(1, srcH);
+
+    let sx = 0;
+    let sy = 0;
+    let cropW = srcW;
+    let cropH = srcH;
+
+    if (srcAspect > TARGET_ASPECT) {
+      cropH = srcH;
+      cropW = Math.max(1, Math.floor(srcH * TARGET_ASPECT));
+      sx = Math.max(0, Math.floor((srcW - cropW) / 2));
+    } else if (srcAspect < TARGET_ASPECT) {
+      cropW = srcW;
+      cropH = Math.max(1, Math.floor(srcW / TARGET_ASPECT));
+      sy = Math.max(0, Math.floor((srcH - cropH) / 2));
+    }
 
     state.mirrorCtx.drawImage(
       sourceCanvas,
       sx,
       sy,
-      square,
-      square,
+      cropW,
+      cropH,
       0,
       0,
-      FRAME_SIZE,
-      FRAME_SIZE,
+      TARGET_WIDTH,
+      TARGET_HEIGHT,
     );
   }
 
@@ -271,7 +304,7 @@ body {
     stopMirrorLoop();
     const tick = () => {
       if (!state.recording) return;
-      drawCroppedSquare(sourceCanvas);
+      drawCroppedFrame(sourceCanvas);
       state.mirrorRaf = requestAnimationFrame(tick);
     };
     state.mirrorRaf = requestAnimationFrame(tick);
@@ -285,6 +318,7 @@ body {
     }
 
     if (typeof MediaRecorder === "undefined") {
+      notifyUser("Ваш клиент Telegram не поддерживает запись MP4. Откройте арену на ПК.");
       return;
     }
 
@@ -295,11 +329,16 @@ body {
 
     try {
       const mirrorCanvas = ensureMirrorCanvas();
-      drawCroppedSquare(canvas);
+      drawCroppedFrame(canvas);
       startMirrorLoop(canvas);
 
       const stream = mirrorCanvas.captureStream(24);
       const mimeType = resolveMimeType();
+      if (!mimeType || !mimeType.toLowerCase().includes("mp4")) {
+        notifyUser("На этом устройстве недоступна запись MP4 (H264). Используйте Telegram Desktop.");
+        stopMirrorLoop();
+        return;
+      }
       const recorderOptions = mimeType
         ? { mimeType, videoBitsPerSecond: 1_200_000 }
         : { videoBitsPerSecond: 1_200_000 };
@@ -365,14 +404,14 @@ body {
     onBattleFinished: stopRecording,
   };
 
-  ensureSquareGameFrame();
+  ensureTargetGameFrame();
   updateDebugWidget();
-  window.addEventListener("resize", ensureSquareGameFrame);
+  window.addEventListener("resize", ensureTargetGameFrame);
   window.addEventListener("resize", updateDebugWidget);
   if (window.Telegram?.WebApp?.onEvent) {
     window.Telegram.WebApp.onEvent("viewportChanged", updateDebugWidget);
   }
-  const frameInit = () => ensureSquareGameFrame();
+  const frameInit = () => ensureTargetGameFrame();
   setTimeout(frameInit, 300);
   setTimeout(frameInit, 1000);
   setTimeout(updateDebugWidget, 300);

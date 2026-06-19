@@ -1,7 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { verifySessionId } from "../../../lib/session";
-import { sendVideo } from "../../../lib/telegram";
+import { sendAnimation } from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -41,19 +41,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!rawFile || typeof rawFile === "string") {
     return errorResponse("Missing video file.", 400);
   }
-  const file = rawFile as Blob;
+  const file = rawFile as File;
 
   if (file.size > MAX_UPLOAD_BYTES) {
     return errorResponse("Video file is too large.", 413);
   }
 
-  const isWebm = file.type.toLowerCase().includes("webm");
-  const ext = isWebm ? "webm" : "mp4";
-  const filename = `battle-${sessionId}.${ext}`;
+  const fileType = (file.type || "").toLowerCase();
+  const fileName = (file.name || "").toLowerCase();
+  if (fileType.includes("webm") || fileName.endsWith(".webm")) {
+    return errorResponse("Для автопроигрывания поддерживается только MP4 (H264).", 415);
+  }
+  const filename = `battle-${sessionId}.mp4`;
   const caption = `Бой: ${session.battle.leftHp} HP против ${session.battle.rightHp} HP`;
 
   try {
-    await sendVideo(token, session.chatId, file, caption, filename);
+    await sendAnimation(token, session.chatId, file, caption, filename);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send video.";
     return errorResponse(message, 502);

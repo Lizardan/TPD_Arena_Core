@@ -1,7 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { getArena, markArenaDone } from "../../../lib/arena-store";
-import { arenaAnimationCaption, sendVideo } from "../../../lib/telegram";
+import { arenaAnimationCaption, sendAnimation } from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -51,21 +51,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (!rawFile || typeof rawFile === "string") {
     return errorResponse("Missing video file.", 400);
   }
-  const file = rawFile as Blob;
+  const file = rawFile as File;
 
   if (file.size > MAX_UPLOAD_BYTES) {
     return errorResponse("Video file is too large.", 413);
   }
 
-  const isWebm = file.type.toLowerCase().includes("webm");
-  const ext = isWebm ? "webm" : "mp4";
-  const filename = `arena-${arenaId}.${ext}`;
+  const fileType = (file.type || "").toLowerCase();
+  const fileName = (file.name || "").toLowerCase();
+  if (fileType.includes("webm") || fileName.endsWith(".webm")) {
+    return errorResponse("Для автопроигрывания поддерживается только MP4 (H264).", 415);
+  }
+  const filename = `arena-${arenaId}.mp4`;
   const p1 = arena.player1?.displayName || "Игрок 1";
   const p2 = arena.player2?.displayName || "Игрок 2";
   const caption = arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
 
   try {
-    await sendVideo(token, arena.chatId, file, caption, filename);
+    await sendAnimation(token, arena.chatId, file, caption, filename);
     await markArenaDone(kv, arenaId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send video.";
