@@ -28,6 +28,7 @@ namespace TPD.Arena
             public GameObject obj;
             public float eventTimestamp;
             public float maxLifetime;
+            public bool renderOnTop;
         }
 
         private readonly List<ExportAbilityVfxEntry> exportAbilityVfx = new List<ExportAbilityVfxEntry>();
@@ -54,6 +55,7 @@ namespace TPD.Arena
             if (activeStunVFX == null && stunVFXPrefab != null)
             {
                 activeStunVFX = VFXPool.InstantiatePrefab(stunVFXPrefab, transform, stunLocalPos, stunLocalScale);
+                ApplyRenderOnTop(activeStunVFX);
             }
         }
 
@@ -164,6 +166,8 @@ namespace TPD.Arena
                         || ev.eventType == TimelineEventType.ResumeCasting)
                     {
                         AbilityDataSO ability = resolveAbility(ev.actorPlayer, ev.abilityName);
+                        if (ability != null && (ability.type == AbilityType.Heal || ability.type == AbilityType.Shield))
+                            continue;
                         Vector3 offset = ability != null ? ability.hitVfxOffset : Vector3.up;
                         Vector3 scale = ResolveVfxScale(ability != null ? ability.vfxLocalScale : Vector3.zero);
                         GameObject prefab = ability != null ? ability.castVfxPrefab : null;
@@ -179,7 +183,8 @@ namespace TPD.Arena
                                 age,
                                 maxAge,
                                 simStep,
-                                null);
+                                null,
+                                true);
                     }
                 }
 
@@ -194,6 +199,8 @@ namespace TPD.Arena
                     {
                         AbilityDataSO ability = resolveAbility(ev.actorPlayer, ev.abilityName);
                         Vector3 offset = ability != null ? ability.hitVfxOffset : Vector3.up;
+                        if (ev.eventType == TimelineEventType.HealApplied || ev.eventType == TimelineEventType.ShieldApplied)
+                            offset = GetSupportEffectOffset(offset);
                         Vector3 scale = ResolveVfxScale(ability != null ? ability.vfxLocalScale : Vector3.zero);
                         SyncExportAbilityVfxInstance(
                                 MakeExportVfxEventKey(ev),
@@ -204,7 +211,8 @@ namespace TPD.Arena
                                 age,
                                 VFXPool.GetParticleLifetime(ability != null ? ability.hitVfxPrefab : null),
                                 simStep,
-                                ability != null ? ability.displayColor : (Color?)null);
+                                ability != null ? ability.displayColor : (Color?)null,
+                                true);
                         break;
                     }
                 }
@@ -242,7 +250,8 @@ namespace TPD.Arena
             float age,
             float maxLifetime,
             float simStep,
-            Color? tint)
+            Color? tint,
+            bool renderOnTop)
         {
             if (prefab == null || age > maxLifetime)
                 return;
@@ -251,7 +260,7 @@ namespace TPD.Arena
             GameObject activeObj;
             if (entryIndex < 0)
             {
-                activeObj = SpawnAbilityVfxObject(prefab, localOffset, localScale, tint);
+                activeObj = SpawnAbilityVfxObject(prefab, localOffset, localScale, tint, renderOnTop);
                 if (activeObj == null)
                     return;
 
@@ -260,7 +269,8 @@ namespace TPD.Arena
                     eventKey = eventKey,
                     obj = activeObj,
                     eventTimestamp = eventTimestamp,
-                    maxLifetime = maxLifetime
+                    maxLifetime = maxLifetime,
+                    renderOnTop = renderOnTop
                 });
             }
             else
@@ -435,7 +445,12 @@ namespace TPD.Arena
             }
         }
 
-        private GameObject SpawnAbilityVfxObject(GameObject prefab, Vector3 localOffset, Vector3 localScale, Color? tint = null)
+        private GameObject SpawnAbilityVfxObject(
+            GameObject prefab,
+            Vector3 localOffset,
+            Vector3 localScale,
+            Color? tint = null,
+            bool renderOnTop = true)
         {
             if (prefab == null)
                 return null;
@@ -443,6 +458,11 @@ namespace TPD.Arena
             GameObject obj = VFXPool.InstantiatePrefab(prefab, transform, localOffset, localScale);
             if (obj != null && tint.HasValue)
                 ApplyParticleTint(obj, tint.Value);
+            if (obj != null && renderOnTop)
+            {
+                ApplyRenderOnTop(obj);
+                PushTowardCamera(obj.transform, 0.45f);
+            }
 
             return obj;
         }
@@ -482,9 +502,15 @@ namespace TPD.Arena
             Vector3 localOffset,
             Vector3 localScale,
             float maxLifetime = -1f,
-            Color? tint = null)
+            Color? tint = null,
+            bool renderOnTop = true)
         {
-            GameObject obj = SpawnAbilityVfxObject(prefab, localOffset, ResolveVfxScale(localScale), tint);
+            GameObject obj = SpawnAbilityVfxObject(
+                prefab,
+                localOffset,
+                ResolveVfxScale(localScale),
+                tint,
+                renderOnTop);
             if (obj == null)
                 return;
 
@@ -550,6 +576,55 @@ namespace TPD.Arena
                 yield return null;
             }
             if (obj != null) vfxPool.Return(prefab, obj);
+        }
+
+        public Vector3 GetSupportEffectOffset(Vector3 originalOffset)
+        {
+            return new Vector3(originalOffset.x, 0f, originalOffset.z);
+        }
+
+        private static void ApplyRenderOnTop(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.sortingOrder = 5000;
+                if (renderer is ParticleSystemRenderer particleRenderer)
+                    particleRenderer.sortingFudge = 8f;
+
+                Material[] materials = renderer.materials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    Material mat = materials[i];
+                    if (mat == null)
+                        continue;
+
+                    if (mat.renderQueue < 5000)
+                        mat.renderQueue = 5000;
+                    if (mat.HasProperty("_ZTest"))
+                        mat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+                    if (mat.HasProperty("_ZWrite"))
+                        mat.SetInt("_ZWrite", 0);
+                }
+            }
+        }
+
+        private static void PushTowardCamera(Transform effectRoot, float distance)
+        {
+            if (effectRoot == null || distance <= 0f)
+                return;
+
+            Camera cam = Camera.main;
+            if (cam == null)
+                return;
+
+            Vector3 toCamera = cam.transform.position - effectRoot.position;
+            if (toCamera.sqrMagnitude < 0.0001f)
+                return;
+
+            effectRoot.position += toCamera.normalized * distance;
         }
 
         public void ClearVFX()

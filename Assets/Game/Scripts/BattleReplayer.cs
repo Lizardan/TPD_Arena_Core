@@ -177,7 +177,7 @@ namespace TPD.Arena
                         case TimelineEventType.ResumeCasting:
                         {
                             var castAbility = BattleSimulator.GetAbilityByName(ev.abilityName, pc.abilities, pc.autoAttack);
-                            if (castAbility?.castVfxPrefab != null)
+                            if (castAbility?.castVfxPrefab != null && !IsSupportAbility(castAbility))
                             {
                                 float maxLifetime = ev.eventType == TimelineEventType.ResumeCasting && ev.remainingCastTime > 0f
                                     ? ev.remainingCastTime
@@ -213,7 +213,8 @@ namespace TPD.Arena
                                     hitAbility.hitVfxOffset,
                                     hitAbility.vfxLocalScale,
                                     -1f,
-                                    hitAbility.displayColor);
+                                    hitAbility.displayColor,
+                                    true);
                             }
                             break;
                         case TimelineEventType.HealApplied:
@@ -222,10 +223,11 @@ namespace TPD.Arena
                             if (healAbility?.hitVfxPrefab != null)
                                 pc.vfx.PlayAbilityVFX(
                                     healAbility.hitVfxPrefab,
-                                    healAbility.hitVfxOffset,
+                                    pc.vfx.GetSupportEffectOffset(healAbility.hitVfxOffset),
                                     healAbility.vfxLocalScale,
                                     -1f,
-                                    healAbility.displayColor);
+                                    healAbility.displayColor,
+                                    true);
                             break;
                         case TimelineEventType.ShieldApplied:
                             pc.vfx.SpawnShieldText(ev.damage);
@@ -233,10 +235,11 @@ namespace TPD.Arena
                             if (shieldAbility?.hitVfxPrefab != null)
                                 pc.vfx.PlayAbilityVFX(
                                     shieldAbility.hitVfxPrefab,
-                                    shieldAbility.hitVfxOffset,
+                                    pc.vfx.GetSupportEffectOffset(shieldAbility.hitVfxOffset),
                                     shieldAbility.vfxLocalScale,
                                     -1f,
-                                    shieldAbility.displayColor);
+                                    shieldAbility.displayColor,
+                                    true);
                             break;
                     }
                 }
@@ -325,10 +328,18 @@ namespace TPD.Arena
 
             if (state.state == PlayerReplayState.State.Casting && targetAnim != null)
             {
+                bool resumedFromFrozenStun =
+                    prevState.state == PlayerReplayState.State.Stunned
+                    && prevState.castSessionId == state.castSessionId
+                    && prevState.abilityName == state.abilityName
+                    && prevState.stunProgress >= 0f;
+
                 bool newCast = prevState.state != PlayerReplayState.State.Casting
                     || prevState.castSessionId != state.castSessionId
                     || prevState.abilityName != state.abilityName;
-                if (newCast)
+                if (resumedFromFrozenStun)
+                    anim.Play(targetAnim, 0, Mathf.Clamp01(prevState.stunProgress));
+                else if (newCast)
                     anim.CrossFade(targetAnim, 0.1f, 0, 0f);
 
                 float clipLen = castData?.animationClip ? castData.animationClip.length : 1f;
@@ -351,6 +362,13 @@ namespace TPD.Arena
         {
             if (anim1 != null) anim1.Update(0f);
             if (anim2 != null) anim2.Update(0f);
+        }
+
+        private static bool IsSupportAbility(AbilityDataSO ability)
+        {
+            if (ability == null)
+                return false;
+            return ability.type == AbilityType.Heal || ability.type == AbilityType.Shield;
         }
 
         private AnimatorCullingMode savedCullMode1;

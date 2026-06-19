@@ -52,6 +52,8 @@ namespace TPD.Arena
         public TextMeshProUGUI exportStatusText;
 
         public TextMeshProUGUI namesText;
+        public TextMeshProUGUI victoryText;
+        public float resultHoldSeconds = 2f;
 
         public AudioListener exportAudioListener;
 
@@ -219,6 +221,8 @@ namespace TPD.Arena
                 if (namesGo != null)
                     namesText = namesGo.GetComponent<TextMeshProUGUI>();
             }
+            EnsureVictoryText();
+            HideVictoryBanner();
 
 
 
@@ -664,6 +668,10 @@ namespace TPD.Arena
 
 
             int winnerSide = ShowBattleResult();
+            ApplyFinalResultPresentation(winnerSide);
+            yield return WaitForResultPresentation(winnerSide);
+
+            HideVictoryBanner();
             if (miniAppPlayback)
                 NotifyMiniAppBattleFinished(winnerSide);
 
@@ -802,7 +810,7 @@ namespace TPD.Arena
 
         {
 
-            replayer.UpdateAtTime(battleDuration, false);
+            replayer.UpdateAtTime(battleDuration, true);
 
             var s1 = GetPlayerStateAtTime(
 
@@ -819,16 +827,10 @@ namespace TPD.Arena
 
 
             if (s1.hp <= 0 && s2.hp > 0)
-            {
-                player2.UpdateState("Won");
                 return 2;
-            }
 
             if (s2.hp <= 0 && s1.hp > 0)
-            {
-                player1.UpdateState("Won");
                 return 1;
-            }
 
             return 0;
 
@@ -865,6 +867,7 @@ namespace TPD.Arena
             player2.UpdateState("Idle");
 
             UpdateNamesLabel();
+            HideVictoryBanner();
 
         }
 
@@ -881,6 +884,146 @@ namespace TPD.Arena
                 return fallback;
             value = value.Trim();
             return value.Length > 64 ? value.Substring(0, 64) : value;
+        }
+
+        private void ApplyFinalResultPresentation(int winnerSide)
+        {
+            if (winnerSide == 1)
+            {
+                PlayAnimationFromStart(player1.animator, "Idle");
+                PlayAnimationFromStart(player2.animator, "Death");
+                player1.UpdateState("Won");
+                player2.UpdateState("Dead");
+            }
+            else if (winnerSide == 2)
+            {
+                PlayAnimationFromStart(player2.animator, "Idle");
+                PlayAnimationFromStart(player1.animator, "Death");
+                player2.UpdateState("Won");
+                player1.UpdateState("Dead");
+            }
+            else
+            {
+                PlayAnimationFromStart(player1.animator, "Idle");
+                PlayAnimationFromStart(player2.animator, "Idle");
+                player1.UpdateState("Idle");
+                player2.UpdateState("Idle");
+            }
+
+            ShowVictoryBanner(winnerSide);
+        }
+
+        private void EnsureVictoryText()
+        {
+            if (victoryText == null)
+            {
+                var existing = GameObject.Find("Win");
+                if (existing != null)
+                    victoryText = existing.GetComponent<TextMeshProUGUI>();
+            }
+            if (victoryText != null)
+                return;
+
+            Transform parent = namesText != null ? namesText.transform.parent : null;
+            if (parent == null && startBattleButton != null)
+                parent = startBattleButton.transform.parent;
+            if (parent == null)
+                return;
+
+            var go = new GameObject("VictoryText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -12f);
+            rect.sizeDelta = new Vector2(900f, 80f);
+
+            victoryText = go.GetComponent<TextMeshProUGUI>();
+            victoryText.fontSize = 56f;
+            victoryText.enableAutoSizing = true;
+            victoryText.fontSizeMin = 24f;
+            victoryText.fontSizeMax = 72f;
+            victoryText.alignment = TextAlignmentOptions.Top;
+            victoryText.color = new Color(1f, 0.9f, 0.25f, 1f);
+
+            TextMeshProUGUI styleSource = namesText;
+            if (styleSource == null && startBattleButton != null)
+                styleSource = startBattleButton.GetComponentInChildren<TextMeshProUGUI>();
+            CopyTextStyle(styleSource, victoryText);
+        }
+
+        private void ShowVictoryBanner(int winnerSide)
+        {
+            EnsureVictoryText();
+            if (victoryText == null)
+                return;
+
+            if (winnerSide == 1)
+                victoryText.text = $"{leftFighterName} WIN";
+            else if (winnerSide == 2)
+                victoryText.text = $"{rightFighterName} WIN";
+            else
+                victoryText.text = "НИЧЬЯ";
+
+            victoryText.gameObject.SetActive(true);
+        }
+
+        private void HideVictoryBanner()
+        {
+            if (victoryText == null)
+                return;
+            victoryText.text = string.Empty;
+            victoryText.gameObject.SetActive(false);
+        }
+
+        private static void PlayAnimationFromStart(Animator animator, string stateName)
+        {
+            if (animator == null || string.IsNullOrWhiteSpace(stateName))
+                return;
+            animator.speed = 1f;
+            animator.Play(stateName, 0, 0f);
+        }
+
+        private IEnumerator WaitForResultPresentation(int winnerSide)
+        {
+            float minHoldSeconds = Mathf.Max(0f, resultHoldSeconds);
+            float stageStartedAt = Time.time;
+
+            Animator loserAnimator = null;
+            if (winnerSide == 1)
+                loserAnimator = player2 != null ? player2.animator : null;
+            else if (winnerSide == 2)
+                loserAnimator = player1 != null ? player1.animator : null;
+
+            if (loserAnimator != null)
+            {
+                bool deathStateReached = false;
+                const float maxDeathWaitSeconds = 8f;
+                while (Time.time - stageStartedAt < maxDeathWaitSeconds)
+                {
+                    AnimatorStateInfo state = loserAnimator.GetCurrentAnimatorStateInfo(0);
+                    if (state.IsName("Death"))
+                    {
+                        deathStateReached = true;
+                        if (state.normalizedTime >= 0.99f)
+                            break;
+                    }
+                    else if (deathStateReached)
+                    {
+                        break;
+                    }
+
+                    yield return null;
+                }
+            }
+
+            if (minHoldSeconds <= 0f)
+                yield break;
+
+            while (Time.time - stageStartedAt < minHoldSeconds)
+                yield return null;
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
