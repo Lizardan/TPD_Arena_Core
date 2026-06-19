@@ -1,6 +1,7 @@
 import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
 import { createArena, getActiveArenaForChat, updateArenaMessageId } from "../lib/arena-store";
+import { getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
 import {
   arenaWaitingText,
   buildGroupArenaKeyboard,
@@ -51,6 +52,10 @@ function isGroupChat(chat: TelegramChat): boolean {
   return chat.type === "group" || chat.type === "supergroup";
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
@@ -95,6 +100,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const text = message.text.trim();
   const command = commandName(text);
   const sourceMessageId = message.message_id;
+  const kv = context.env.ARENA_KV;
 
   async function tryDeleteSourceMessage(): Promise<void> {
     if (!sourceMessageId || sourceMessageId <= 0) return;
@@ -105,11 +111,38 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   }
 
+  async function sendPersistentMessage(
+    messageText: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<{ message_id: number }> {
+    const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
+    const sent = await sendMessage(token, chatId, messageText, replyMarkup);
+    if (kv) {
+      await setLastBotMessageId(kv, chatId, sent.message_id);
+    }
+    if (previousMessageId && previousMessageId !== sent.message_id) {
+      try {
+        await deleteMessage(token, chatId, previousMessageId);
+      } catch {
+        // Ignore: previous message may already be deleted or inaccessible.
+      }
+    }
+    return sent;
+  }
+
+  async function sendTemporaryNotice(messageText: string, ttlMs = 3000): Promise<void> {
+    const sent = await sendMessage(token, chatId, messageText);
+    await sleep(Math.max(0, ttlMs));
+    try {
+      await deleteMessage(token, chatId, sent.message_id);
+    } catch {
+      // Ignore: Telegram may refuse delete in some chats.
+    }
+  }
+
   try {
     if (command === "/start") {
-      await sendMessage(
-        token,
-        chatId,
+      await sendPersistentMessage(
         "Отправьте /start_tpd_arena в групповом чате или /battle с JSON в личке.\n\n" +
           'Пример:\n/battle {"leftHp":80,"rightHp":100,"leftName":"Левый","rightName":"Правый"}',
       );
@@ -117,9 +150,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     if (command === "/arena") {
-      await sendMessage(
-        token,
-        chatId,
+      await sendPersistentMessage(
         "Команда обновлена. Используйте /start_tpd_arena.",
       );
       return jsonResponse({ ok: true });
@@ -127,17 +158,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (command === "/start_tpd_arena") {
       if (!isGroupChat(message.chat)) {
-        await sendMessage(
-          token,
-          chatId,
+        await sendPersistentMessage(
           "Команда /start_tpd_arena работает в групповом чате. Добавьте бота в группу и вызовите арену там.",
         );
         return jsonResponse({ ok: true });
       }
 
-      const kv = context.env.ARENA_KV;
       if (!kv) {
-        await sendMessage(token, chatId, "Арена временно недоступна (KV не настроен).");
+        await sendPersistentMessage("Арена временно недоступна (KV не настроен).");
         return jsonResponse({ ok: true });
       }
 
@@ -153,11 +181,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           existing.status === "fighting"
             ? "Сейчас уже идёт бой. Новая арена будет доступна после отправки видео в чат."
             : "Арена уже открыта и ждёт второго бойца. Новую арену можно запустить после завершения текущей.";
-        await sendMessage(
-          token,
-          chatId,
-          lockedText,
-        );
+        await sendTemporaryNotice(lockedText, 3000);
         return jsonResponse({ ok: true });
       }
 
@@ -167,9 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         openerName,
       });
 
-      const sent = await sendMessage(
-        token,
-        chatId,
+      const sent = await sendPersistentMessage(
         arenaWaitingText(openerName, null, arena.id),
         buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену (ПК)", miniApp),
       );
@@ -180,9 +202,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (command === "/battle" || text.startsWith("{")) {
       if (isGroupChat(message.chat)) {
-        await sendMessage(
-          token,
-          chatId,
+        await sendPersistentMessage(
           "В группе используйте /start_tpd_arena. /battle — для личных сообщений с ботом.",
         );
         return jsonResponse({ ok: true });
@@ -191,9 +211,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const battle = extractJsonFromMessage(text);
       const ownerUserId = message.from?.id ?? chatId;
       await tryDeleteSourceMessage();
-      const sent = await sendMessage(
-        token,
-        chatId,
+      const sent = await sendPersistentMessage(
         "Нажмите кнопку ниже. Бой отрисуется на вашем устройстве, затем видео придёт в этот чат.",
       );
       const sessionId = await createSessionId(chatId, battle, token, ownerUserId, sent.message_id);
@@ -210,7 +228,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Некорректный запрос.";
-    await sendMessage(token, chatId, messageText);
+    await sendPersistentMessage(messageText);
     return jsonResponse({ ok: true });
   }
 

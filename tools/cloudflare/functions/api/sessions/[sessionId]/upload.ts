@@ -1,5 +1,6 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
+import { getLastBotMessageId, setLastBotMessageId } from "../../../lib/chat-message-store";
 import { verifySessionId } from "../../../lib/session";
 import {
   arenaAnimationCaption,
@@ -62,6 +63,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Для автопроигрывания поддерживается только MP4 (H264).", 415);
   }
   const filename = `battle-${sessionId}.mp4`;
+  const kv = context.env.ARENA_KV;
   const p1 = session.battle.leftName || "Игрок 1";
   const p2 = session.battle.rightName || "Игрок 2";
   const winnerCaption = battleWinnerCaption(p1, p2, winnerSide);
@@ -70,12 +72,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     arenaAnimationCaption(p1, p2, session.battle.leftHp, session.battle.rightHp);
 
   try {
-    await sendAnimation(token, session.chatId, file, caption, filename);
-    if (session.promptMessageId && session.promptMessageId > 0) {
+    const previousMessageId = kv ? await getLastBotMessageId(kv, session.chatId) : null;
+    const sent = await sendAnimation(token, session.chatId, file, caption, filename);
+    if (kv) {
+      await setLastBotMessageId(kv, session.chatId, sent.message_id);
+    }
+
+    const staleMessageIds = new Set<number>();
+    if (previousMessageId && previousMessageId !== sent.message_id) {
+      staleMessageIds.add(previousMessageId);
+    }
+    if (session.promptMessageId && session.promptMessageId > 0 && session.promptMessageId !== sent.message_id) {
+      staleMessageIds.add(session.promptMessageId);
+    }
+    for (const staleMessageId of staleMessageIds) {
       try {
-        await deleteMessage(token, session.chatId, session.promptMessageId);
+        await deleteMessage(token, session.chatId, staleMessageId);
       } catch (error) {
-        console.warn("deleteMessage (session prompt) failed:", error);
+        console.warn("deleteMessage (session stale message) failed:", error);
       }
     }
   } catch (error) {

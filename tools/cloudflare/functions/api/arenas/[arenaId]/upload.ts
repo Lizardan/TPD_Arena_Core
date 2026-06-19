@@ -1,6 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { getArena, markArenaDone } from "../../../lib/arena-store";
+import { getLastBotMessageId, setLastBotMessageId } from "../../../lib/chat-message-store";
 import {
   arenaAnimationCaption,
   battleWinnerCaption,
@@ -79,12 +80,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     winnerCaption ?? arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
 
   try {
-    await sendAnimation(token, arena.chatId, file, caption, filename);
-    if (arena.messageId > 0) {
+    const previousMessageId = await getLastBotMessageId(kv, arena.chatId);
+    const sent = await sendAnimation(token, arena.chatId, file, caption, filename);
+    await setLastBotMessageId(kv, arena.chatId, sent.message_id);
+
+    const staleMessageIds = new Set<number>();
+    if (previousMessageId && previousMessageId !== sent.message_id) {
+      staleMessageIds.add(previousMessageId);
+    }
+    if (arena.messageId > 0 && arena.messageId !== sent.message_id) {
+      staleMessageIds.add(arena.messageId);
+    }
+    for (const staleMessageId of staleMessageIds) {
       try {
-        await deleteMessage(token, arena.chatId, arena.messageId);
+        await deleteMessage(token, arena.chatId, staleMessageId);
       } catch (error) {
-        console.warn("deleteMessage (arena prompt) failed:", error);
+        console.warn("deleteMessage (arena stale message) failed:", error);
       }
     }
     await markArenaDone(kv, arenaId);

@@ -70,12 +70,12 @@ export async function sendAnimation(
   animation: Blob,
   caption: string,
   filename: string,
-): Promise<void> {
+): Promise<{ message_id: number }> {
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("caption", caption);
   form.append("animation", animation, filename);
-  await callTelegram(token, "sendAnimation", form);
+  return callTelegram(token, "sendAnimation", form);
 }
 
 export async function sendVideo(
@@ -84,13 +84,13 @@ export async function sendVideo(
   video: Blob,
   caption: string,
   filename: string,
-): Promise<void> {
+): Promise<{ message_id: number }> {
   const form = new FormData();
   form.append("chat_id", String(chatId));
   form.append("caption", caption);
   form.append("supports_streaming", "true");
   form.append("video", video, filename);
-  await callTelegram(token, "sendVideo", form);
+  return callTelegram(token, "sendVideo", form);
 }
 
 export function buildWebAppKeyboard(webAppUrl: string, buttonText = "Сгенерировать видео") {
