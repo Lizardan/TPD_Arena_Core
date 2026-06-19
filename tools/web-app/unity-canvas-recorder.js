@@ -72,66 +72,6 @@ body {
     }
   }
 
-  function ensureDebugWidget() {
-    const widgetId = "tpd-miniapp-debug-widget";
-    const styleId = "tpd-miniapp-debug-widget-style";
-
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.textContent = `
-#${widgetId} {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 2147483647;
-  min-width: 220px;
-  max-width: 320px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(5, 8, 16, 0.82);
-  border: 1px solid rgba(126, 166, 255, 0.45);
-  color: #dbe7ff;
-  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre;
-  pointer-events: none;
-}
-`;
-      document.head.appendChild(style);
-    }
-
-    let widget = document.getElementById(widgetId);
-    if (!widget) {
-      widget = document.createElement("div");
-      widget.id = widgetId;
-      document.body.appendChild(widget);
-    }
-    return widget;
-  }
-
-  function round(value) {
-    return typeof value === "number" && Number.isFinite(value)
-      ? Math.round(value * 1000) / 1000
-      : value ?? "-";
-  }
-
-  function updateDebugWidget() {
-    const widget = ensureDebugWidget();
-    const tg = window.Telegram?.WebApp;
-    const width = window.innerWidth || 0;
-    const height = window.innerHeight || 0;
-    const ratio = height > 0 ? width / height : 0;
-
-    widget.textContent =
-      `inner: ${width} x ${height}\n` +
-      `ratio: ${round(ratio)}\n` +
-      `target: ${TARGET_WIDTH} x ${TARGET_HEIGHT}\n` +
-      `platform: ${tg?.platform || "-"}\n` +
-      `expanded: ${String(Boolean(tg?.isExpanded))}\n` +
-      `vpHeight: ${round(tg?.viewportHeight)}\n` +
-      `vpStable: ${round(tg?.viewportStableHeight)}`;
-  }
-
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -244,71 +184,7 @@ body {
     stream: null,
     chunks: [],
     mimeType: "",
-    mirrorCanvas: null,
-    mirrorCtx: null,
-    mirrorRaf: 0,
   };
-
-  function stopMirrorLoop() {
-    if (state.mirrorRaf) {
-      cancelAnimationFrame(state.mirrorRaf);
-      state.mirrorRaf = 0;
-    }
-  }
-
-  function ensureMirrorCanvas() {
-    if (!state.mirrorCanvas) {
-      state.mirrorCanvas = document.createElement("canvas");
-      state.mirrorCanvas.width = TARGET_WIDTH;
-      state.mirrorCanvas.height = TARGET_HEIGHT;
-      state.mirrorCtx = state.mirrorCanvas.getContext("2d", { alpha: false });
-    }
-    return state.mirrorCanvas;
-  }
-
-  function drawCroppedFrame(sourceCanvas) {
-    if (!state.mirrorCtx || !sourceCanvas) return;
-    const srcW = sourceCanvas.width || sourceCanvas.clientWidth || TARGET_WIDTH;
-    const srcH = sourceCanvas.height || sourceCanvas.clientHeight || TARGET_HEIGHT;
-    const srcAspect = srcW / Math.max(1, srcH);
-
-    let sx = 0;
-    let sy = 0;
-    let cropW = srcW;
-    let cropH = srcH;
-
-    if (srcAspect > TARGET_ASPECT) {
-      cropH = srcH;
-      cropW = Math.max(1, Math.floor(srcH * TARGET_ASPECT));
-      sx = Math.max(0, Math.floor((srcW - cropW) / 2));
-    } else if (srcAspect < TARGET_ASPECT) {
-      cropW = srcW;
-      cropH = Math.max(1, Math.floor(srcW / TARGET_ASPECT));
-      sy = Math.max(0, Math.floor((srcH - cropH) / 2));
-    }
-
-    state.mirrorCtx.drawImage(
-      sourceCanvas,
-      sx,
-      sy,
-      cropW,
-      cropH,
-      0,
-      0,
-      TARGET_WIDTH,
-      TARGET_HEIGHT,
-    );
-  }
-
-  function startMirrorLoop(sourceCanvas) {
-    stopMirrorLoop();
-    const tick = () => {
-      if (!state.recording) return;
-      drawCroppedFrame(sourceCanvas);
-      state.mirrorRaf = requestAnimationFrame(tick);
-    };
-    state.mirrorRaf = requestAnimationFrame(tick);
-  }
 
   async function startRecording() {
     if (state.recording || state.uploadInFlight) return;
@@ -328,15 +204,16 @@ body {
     }
 
     try {
-      const mirrorCanvas = ensureMirrorCanvas();
-      drawCroppedFrame(canvas);
-      startMirrorLoop(canvas);
+      // Keep actual rendered frame deterministic for upload output.
+      if (canvas.width !== TARGET_WIDTH || canvas.height !== TARGET_HEIGHT) {
+        canvas.width = TARGET_WIDTH;
+        canvas.height = TARGET_HEIGHT;
+      }
 
-      const stream = mirrorCanvas.captureStream(24);
+      const stream = canvas.captureStream(24);
       const mimeType = resolveMimeType();
       if (!mimeType || !mimeType.toLowerCase().includes("mp4")) {
         notifyUser("На этом устройстве недоступна запись MP4 (H264). Используйте Telegram Desktop.");
-        stopMirrorLoop();
         return;
       }
       const recorderOptions = mimeType
@@ -372,7 +249,6 @@ body {
         } finally {
           state.uploadInFlight = false;
           state.chunks = [];
-          stopMirrorLoop();
           if (state.stream) {
             for (const track of state.stream.getTracks()) {
               track.stop();
@@ -393,7 +269,6 @@ body {
   function stopRecording() {
     if (!state.recording || !state.recorder) return;
     state.recording = false;
-    stopMirrorLoop();
     if (state.recorder.state !== "inactive") {
       state.recorder.stop();
     }
@@ -405,15 +280,8 @@ body {
   };
 
   ensureTargetGameFrame();
-  updateDebugWidget();
   window.addEventListener("resize", ensureTargetGameFrame);
-  window.addEventListener("resize", updateDebugWidget);
-  if (window.Telegram?.WebApp?.onEvent) {
-    window.Telegram.WebApp.onEvent("viewportChanged", updateDebugWidget);
-  }
   const frameInit = () => ensureTargetGameFrame();
   setTimeout(frameInit, 300);
   setTimeout(frameInit, 1000);
-  setTimeout(updateDebugWidget, 300);
-  setTimeout(updateDebugWidget, 1000);
 })();
