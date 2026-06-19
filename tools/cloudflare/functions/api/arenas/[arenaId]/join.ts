@@ -14,10 +14,6 @@ interface JoinBody {
   initData?: string;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function isMobileArenaClient(platformHeader: string, userAgent: string): boolean {
   const platform = platformHeader.toLowerCase();
   if (platform === "android" || platform === "ios") {
@@ -122,41 +118,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         refreshed.player2
       ) {
         arenaForClient = refreshed;
-      }
-    }
-
-    // Race self-healing:
-    // when two users join almost simultaneously, each can briefly see themselves as player1.
-    // Re-check arena state and, if another player1 already won the slot, retry join to claim player2.
-    if (
-      arenaForClient.status === "waiting" &&
-      arenaForClient.player1?.id === user.id &&
-      !arenaForClient.player2
-    ) {
-      for (let i = 0; i < 4; i++) {
-        await sleep(120);
-        const latest = await getArena(kv, arenaId);
-        if (!latest) break;
-
-        if (latest.status === "fighting" && latest.player1 && latest.player2) {
-          arenaForClient = latest;
-          break;
-        }
-
-        if (
-          latest.status === "waiting" &&
-          latest.player1 &&
-          latest.player1.id !== user.id &&
-          !latest.player2
-        ) {
-          const corrected = await joinArena(
-            kv,
-            arenaId,
-            { id: user.id, displayName: displayNameFromUser(user) },
-          );
-          arenaForClient = corrected.arena;
-          if (arenaForClient.status === "fighting") break;
-        }
       }
     }
 
