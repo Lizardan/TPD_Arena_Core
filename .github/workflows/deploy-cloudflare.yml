@@ -244,13 +244,31 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler pages deploy public --project-name=tpd-arena --branch=main --commit-dirty=true
 
-      - name: Smoke-check deployed build id
+      - name: Smoke-check deployed build id (with propagation retry)
         run: |
-          DEPLOYED_BUILD_ID=$(curl -fsSL "https://tpd-arena.pages.dev/version.json" | jq -r .buildId)
-          if [ "$DEPLOYED_BUILD_ID" != "${{ github.sha }}" ]; then
-            echo "::error::Deployed buildId ($DEPLOYED_BUILD_ID) does not match commit (${{ github.sha }})"
-            exit 1
-          fi
+          EXPECTED_BUILD_ID="${{ github.sha }}"
+          MAX_ATTEMPTS=18
+          SLEEP_SECONDS=10
+          LAST_BUILD_ID=""
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            VERSION_URL="https://tpd-arena.pages.dev/version.json?ts=$(date +%s)"
+            RESPONSE="$(curl -fsSL -H "Cache-Control: no-cache" -H "Pragma: no-cache" "$VERSION_URL" || true)"
+            DEPLOYED_BUILD_ID="$(printf '%s' "$RESPONSE" | jq -r '.buildId // empty' 2>/dev/null || true)"
+            LAST_BUILD_ID="$DEPLOYED_BUILD_ID"
+
+            echo "smoke-check attempt=${attempt}/${MAX_ATTEMPTS} expected=${EXPECTED_BUILD_ID} actual=${DEPLOYED_BUILD_ID:-<empty>}"
+
+            if [ "$DEPLOYED_BUILD_ID" = "$EXPECTED_BUILD_ID" ]; then
+              echo "smoke-check matched buildId on attempt $attempt"
+              exit 0
+            fi
+
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "::error::Deployed buildId (${LAST_BUILD_ID:-<empty>}) does not match commit (${EXPECTED_BUILD_ID}) after retries"
+          exit 1
 
       - name: Register Telegram webhook
         working-directory: tools/cloudflare
