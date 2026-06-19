@@ -14,19 +14,45 @@ const webhookSecret = crypto
   .update(`${token.trim()}:tpd-arena-webhook`)
   .digest("hex");
 
-const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    url: webhookUrl,
-    secret_token: webhookSecret,
-  }),
-});
-const payload = await response.json();
-
-if (!payload.ok) {
-  console.error("setWebhook failed:", payload.description || payload);
-  process.exit(1);
+async function callTelegram(method, body) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (!payload.ok) {
+    console.error(`${method} failed:`, payload.description || payload);
+    process.exit(1);
+  }
+  return payload.result;
 }
 
+await callTelegram("setWebhook", {
+  url: webhookUrl,
+  secret_token: webhookSecret,
+});
+
+await callTelegram("setMyCommands", {
+  commands: [
+    {
+      command: "start_tpd_arena",
+      description: "Открыть арену в групповом чате",
+    },
+    {
+      command: "stop_tpd_arena",
+      description: "Остановить текущую арену",
+    },
+    {
+      command: "battle",
+      description: "Запустить бой в личке с JSON",
+    },
+    {
+      command: "start",
+      description: "Показать подсказку",
+    },
+  ],
+});
+
 console.log(`Webhook set to ${webhookUrl} (secret: ${webhookSecret.slice(0, 8)}...)`);
+console.log("Bot slash commands updated.");

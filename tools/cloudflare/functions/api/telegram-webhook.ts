@@ -1,7 +1,7 @@
 import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
-import { createArena, getActiveArenaForChat, updateArenaMessageId } from "../lib/arena-store";
-import { getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
+import { createArena, getActiveArenaForChat, markArenaDone, updateArenaMessageId } from "../lib/arena-store";
+import { clearLastBotMessageId, getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
 import {
   arenaWaitingText,
   buildGroupArenaKeyboard,
@@ -130,6 +130,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return sent;
   }
 
+  async function replacePersistentMessage(
+    messageText: string,
+    replyMarkup?: Record<string, unknown>,
+  ): Promise<{ message_id: number }> {
+    const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
+    if (previousMessageId) {
+      try {
+        await editMessageText(token, chatId, previousMessageId, messageText, replyMarkup);
+        return { message_id: previousMessageId };
+      } catch {
+        // Fall back to a new message if Telegram cannot edit the previous one.
+      }
+    }
+    return sendPersistentMessage(messageText, replyMarkup);
+  }
+
   async function sendTemporaryNotice(messageText: string, ttlMs = 3000): Promise<void> {
     const sent = await sendMessage(token, chatId, messageText);
     await sleep(Math.max(0, ttlMs));
@@ -141,6 +157,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   try {
+    if (command.startsWith("/") || text.startsWith("{")) {
+      await tryDeleteSourceMessage();
+    }
+
     if (command === "/start") {
       await sendPersistentMessage(
         "Отправьте /start_tpd_arena в групповом чате или /battle с JSON в личке.\n\n" +
@@ -152,6 +172,49 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (command === "/arena") {
       await sendPersistentMessage(
         "Команда обновлена. Используйте /start_tpd_arena.",
+      );
+      return jsonResponse({ ok: true });
+    }
+
+    if (command === "/stop_tpd_arena") {
+      if (!isGroupChat(message.chat)) {
+        await sendTemporaryNotice(
+          "Команда остановки арены работает в групповом чате.",
+          3000,
+        );
+        return jsonResponse({ ok: true });
+      }
+
+      if (!kv) {
+        await sendTemporaryNotice("Арена временно недоступна (KV не настроен).", 3000);
+        return jsonResponse({ ok: true });
+      }
+
+      const existing = await getActiveArenaForChat(kv, chatId);
+      if (!existing) {
+        await sendTemporaryNotice("Активной арены сейчас нет.", 3000);
+        return jsonResponse({ ok: true });
+      }
+
+      await markArenaDone(kv, existing.id);
+
+      const staleMessageIds = new Set<number>();
+      const lastMessageId = await getLastBotMessageId(kv, chatId);
+      if (lastMessageId) staleMessageIds.add(lastMessageId);
+      if (existing.messageId > 0) staleMessageIds.add(existing.messageId);
+
+      for (const messageId of staleMessageIds) {
+        try {
+          await deleteMessage(token, chatId, messageId);
+        } catch {
+          // Ignore: message may already be deleted or Telegram may refuse deletion.
+        }
+      }
+      await clearLastBotMessageId(kv, chatId);
+
+      await sendTemporaryNotice(
+        "Текущая арена остановлена. Можно запускать новую.",
+        3000,
       );
       return jsonResponse({ ok: true });
     }
@@ -173,8 +236,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
 
-      await tryDeleteSourceMessage();
-
       const existing = await getActiveArenaForChat(kv, chatId);
       if (existing) {
         const lockedText =
@@ -191,7 +252,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         openerName,
       });
 
-      const sent = await sendPersistentMessage(
+      const sent = await replacePersistentMessage(
         arenaWaitingText(openerName, null, arena.id),
         buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену (ПК)", miniApp),
       );
@@ -210,7 +271,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const battle = extractJsonFromMessage(text);
       const ownerUserId = message.from?.id ?? chatId;
-      await tryDeleteSourceMessage();
       const sent = await sendPersistentMessage(
         "Нажмите кнопку ниже. Бой отрисуется на вашем устройстве, затем видео придёт в этот чат.",
       );
