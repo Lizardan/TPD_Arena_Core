@@ -123,11 +123,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "Кнопки арены включены возле поля ввода.",
       buildBotReplyKeyboard(),
     );
-    await sleep(3000);
-    try {
-      await deleteMessage(token, myChatMember.chat.id, sent.message_id);
-    } catch {
-      // Ignore: Telegram may refuse delete in some chats.
+    const kv = context.env.ARENA_KV;
+    if (kv) {
+      await setLastBotMessageId(kv, myChatMember.chat.id, sent.message_id);
     }
     return jsonResponse({ ok: true });
   }
@@ -278,9 +276,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
       await clearLastBotMessageId(kv, chatId);
 
-      await sendTemporaryNotice(
+      await sendPersistentMessage(
         "Текущая арена остановлена. Можно запускать новую.",
-        3000,
+        buildBotReplyKeyboard(),
       );
       return jsonResponse({ ok: true });
     }
