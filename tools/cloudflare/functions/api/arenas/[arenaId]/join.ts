@@ -1,6 +1,6 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
-import { arenaToPublicJson, joinArena } from "../../../lib/arena-store";
+import { arenaToPublicJson, getActiveArenaForChat, getArena, joinArena } from "../../../lib/arena-store";
 import {
   arenaFightingText,
   arenaWaitingText,
@@ -61,6 +61,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const user = verified.user;
 
   try {
+    const currentArena = await getArena(kv, arenaId);
+    if (!currentArena) {
+      return errorResponse("Арена не найдена или истекла.", 404);
+    }
+    const activeArena = await getActiveArenaForChat(kv, currentArena.chatId);
+    if (
+      activeArena &&
+      activeArena.id !== arenaId &&
+      currentArena.status === "waiting"
+    ) {
+      return errorResponse(
+        `Кнопка устарела. Откройте активную арену с кодом ${activeArena.id}.`,
+        409,
+      );
+    }
+
     const result = await joinArena(
       kv,
       arenaId,

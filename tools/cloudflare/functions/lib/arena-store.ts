@@ -161,8 +161,6 @@ export async function joinArena(
       };
     }
 
-    let justStarted = false;
-
     if (arena.status === "fighting") {
       if (!arena.spectatorIds.includes(player.id)) {
         arena.spectatorIds.push(player.id);
@@ -170,8 +168,9 @@ export async function joinArena(
           expirationTtl: ARENA_TTL_SEC,
         });
       }
+      const persisted = (await getArena(kv, arena.id)) ?? arena;
       return {
-        arena,
+        arena: persisted,
         role: "spectator",
         isHost: false,
         justStarted: false,
@@ -181,22 +180,47 @@ export async function joinArena(
     if (!arena.player1) {
       arena.player1 = player;
       arena.hostUserId = player.id;
+      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+        expirationTtl: ARENA_TTL_SEC,
+      });
+      const persisted = await getArena(kv, arena.id);
+      if (persisted?.player1?.id === player.id) {
+        return {
+          arena: persisted,
+          role: roleForUser(persisted, player.id),
+          isHost: persisted.hostUserId === player.id,
+          justStarted: false,
+        };
+      }
+      continue;
     } else if (!arena.player2 && arena.player1.id !== player.id) {
       arena.player2 = player;
       arena.status = "fighting";
       arena.battle = { leftHp: 100, rightHp: 100 };
-      justStarted = true;
+
       await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
         expirationTtl: ARENA_TTL_SEC,
       });
-      arena.battle = await fetchPlayerStats(
-        arena.player1.displayName,
+      const persisted = await getArena(kv, arena.id);
+      if (!persisted || persisted.player2?.id !== player.id) {
+        continue;
+      }
+
+      persisted.battle = await fetchPlayerStats(
+        persisted.player1?.displayName || "Игрок 1",
         player.displayName,
         statsApiUrl,
       );
-      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+      await kv.put(arenaKey(persisted.id), JSON.stringify(persisted), {
         expirationTtl: ARENA_TTL_SEC,
       });
+      const withStats = (await getArena(kv, persisted.id)) ?? persisted;
+      return {
+        arena: withStats,
+        role: roleForUser(withStats, player.id),
+        isHost: withStats.hostUserId === player.id,
+        justStarted: true,
+      };
     } else {
       if (!arena.spectatorIds.includes(player.id)) {
         arena.spectatorIds.push(player.id);
@@ -204,24 +228,14 @@ export async function joinArena(
       await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
         expirationTtl: ARENA_TTL_SEC,
       });
+      const persisted = (await getArena(kv, arena.id)) ?? arena;
       return {
-        arena,
+        arena: persisted,
         role: "spectator",
-        isHost: arena.hostUserId === player.id,
+        isHost: persisted.hostUserId === player.id,
         justStarted: false,
       };
     }
-
-    await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
-      expirationTtl: ARENA_TTL_SEC,
-    });
-
-    return {
-      arena,
-      role: roleForUser(arena, player.id),
-      isHost: arena.hostUserId === player.id,
-      justStarted,
-    };
   }
 
   throw new Error("Не удалось занять слот. Попробуйте ещё раз.");

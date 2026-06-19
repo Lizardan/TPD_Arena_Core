@@ -4,8 +4,18 @@ const SESSION_TTL_MS = 60 * 60 * 1000;
 
 export interface SessionData {
   chatId: number;
+  userId: number;
   battle: BattlePayload;
   exp: number;
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -48,9 +58,11 @@ export async function createSessionId(
   chatId: number,
   battle: BattlePayload,
   secret: string,
+  userId: number,
 ): Promise<string> {
   const payload: SessionData = {
     chatId,
+    userId,
     battle,
     exp: Date.now() + SESSION_TTL_MS,
   };
@@ -69,12 +81,17 @@ export async function verifySessionId(
   const data = sessionId.slice(0, dot);
   const signature = sessionId.slice(dot + 1);
   const expected = await hmacSign(data, secret);
-  if (signature !== expected) return null;
+  if (!timingSafeEqual(signature, expected)) return null;
 
   try {
     const json = new TextDecoder().decode(base64UrlDecode(data));
     const payload = JSON.parse(json) as SessionData;
-    if (!payload || typeof payload.chatId !== "number" || !payload.battle) {
+    if (
+      !payload ||
+      typeof payload.chatId !== "number" ||
+      typeof payload.userId !== "number" ||
+      !payload.battle
+    ) {
       return null;
     }
     if (payload.exp < Date.now()) return null;

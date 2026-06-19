@@ -49,10 +49,32 @@ function isGroupChat(chat: TelegramChat): boolean {
   return chat.type === "group" || chat.type === "supergroup";
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+async function webhookSecretFromToken(token: string): Promise<string> {
+  const input = `${token.trim()}:tpd-arena-webhook`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
-  const token = context.env.TELEGRAM_BOT_TOKEN;
+  const token = context.env.TELEGRAM_BOT_TOKEN?.trim().replace(/\r/g, "") ?? "";
   if (!token) {
     return errorResponse("TELEGRAM_BOT_TOKEN is not configured.", 500);
+  }
+
+  const incomingSecret =
+    context.request.headers.get("X-Telegram-Bot-Api-Secret-Token")?.trim() || "";
+  const expectedSecret = await webhookSecretFromToken(token);
+  if (!incomingSecret || !timingSafeEqual(incomingSecret, expectedSecret)) {
+    return errorResponse("Forbidden.", 403);
   }
 
   let update: TelegramUpdate;
@@ -142,7 +164,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       const battle = extractJsonFromMessage(text);
-      const sessionId = await createSessionId(chatId, battle, token);
+      const ownerUserId = message.from?.id ?? chatId;
+      const sessionId = await createSessionId(chatId, battle, token, ownerUserId);
       const webAppUrl = `${context.env.WEB_APP_URL.replace(/\/$/, "")}/?session=${encodeURIComponent(sessionId)}`;
 
       await sendMessage(

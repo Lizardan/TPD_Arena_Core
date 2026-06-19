@@ -67,8 +67,6 @@ jobs:
         with:
           path: build/WebGL
           key: webgl-v1-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: |
-            webgl-v1-
 
       - name: Build Unity WebGL
         id: unity_build
@@ -99,6 +97,12 @@ jobs:
             fi
             echo "::warning::No WebGL build in this run (Unity step skipped and cache miss)"
           fi
+
+      - name: Fail tools-only deploy on WebGL cache miss
+        if: steps.webgl_ready.outputs.ready != 'true' && steps.changes.outputs.unity != 'true' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "::error::Tools changed but WebGL cache was missed. Run workflow_dispatch (Unity rebuild) once."
+          exit 1
 
       - name: Report WebGL file sizes
         if: steps.webgl_ready.outputs.ready == 'true' && steps.unity_build.outcome == 'success'
@@ -163,8 +167,6 @@ jobs:
         with:
           path: build/WebGL
           key: webgl-v1-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: |
-            webgl-v1-
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -241,6 +243,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler pages deploy public --project-name=tpd-arena --branch=main --commit-dirty=true
+
+      - name: Smoke-check deployed build id
+        run: |
+          DEPLOYED_BUILD_ID=$(curl -fsSL "https://tpd-arena.pages.dev/version.json" | jq -r .buildId)
+          if [ "$DEPLOYED_BUILD_ID" != "${{ github.sha }}" ]; then
+            echo "::error::Deployed buildId ($DEPLOYED_BUILD_ID) does not match commit (${{ github.sha }})"
+            exit 1
+          fi
 
       - name: Register Telegram webhook
         working-directory: tools/cloudflare

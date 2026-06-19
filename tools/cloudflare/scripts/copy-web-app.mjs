@@ -53,6 +53,14 @@ function patchGameIndexHtml(filePath) {
   }
   // Unity uses fixed Build/* filenames — bust cache after each deploy
   html = html.replace(/(Build\/[^"'\s?]+)(?!\?v=)/g, `$1?v=${buildId}`);
+  const recorderTag = `<script src="/unity-canvas-recorder.js?v=${buildId}" defer></script>`;
+  if (!html.includes("unity-canvas-recorder.js")) {
+    if (html.includes("</body>")) {
+      html = html.replace("</body>", `  ${recorderTag}\n</body>`);
+    } else {
+      html += `\n${recorderTag}\n`;
+    }
+  }
   fs.writeFileSync(filePath, html);
 }
 
@@ -91,6 +99,7 @@ fs.mkdirSync(publicRoot, { recursive: true });
 const shellSrc = fs.readFileSync(path.join(webAppRoot, "shell-index.html"), "utf8");
 fs.writeFileSync(path.join(publicRoot, "index.html"), injectBuildId(shellSrc));
 copyFile(path.join(webAppRoot, "arena-lobby.js"), path.join(publicRoot, "arena-lobby.js"));
+copyFile(path.join(webAppRoot, "unity-canvas-recorder.js"), path.join(publicRoot, "unity-canvas-recorder.js"));
 fs.writeFileSync(
   path.join(publicRoot, "version.json"),
   JSON.stringify({ buildId, builtAt: new Date().toISOString() }, null, 2),

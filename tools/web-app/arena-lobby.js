@@ -122,7 +122,9 @@ async function joinArena(id) {
 }
 
 async function fetchSession(id) {
-  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    headers: initDataHeader(),
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Сессия не найдена.");
@@ -136,8 +138,9 @@ function launchUnity({ battle, arena, session, isHost }) {
 
   const gameParams = new URLSearchParams();
   gameParams.set("battle", encodeBattleParam(battle));
+  if (arena) gameParams.set("arena", arena);
+  if (session) gameParams.set("session", session);
   if (isHost) gameParams.set("host", "1");
-  // arena/session omitted — Unity page must not re-enter lobby
 
   window.location.replace(`/game/index.html?${gameParams.toString()}`);
 }
@@ -159,27 +162,6 @@ async function runArenaLobby(id) {
     arena = await joinArena(id);
     setStatus(roleStatusText(arena));
     setDetail(`${waitingDetail(arena)}\n${lobbyDebugLine(arena)}`);
-    // #region agent log
-    fetch("http://127.0.0.1:7799/ingest/eaabc3e1-bb50-46ab-90a8-b2b6f36f4f14", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a89d64" },
-      body: JSON.stringify({
-        sessionId: "a89d64",
-        runId: "lobby-poll",
-        hypothesisId: "H-poll",
-        location: "arena-lobby.js:poll",
-        message: "arena poll",
-        data: {
-          status: arena.status,
-          role: arena.role,
-          hasP1: Boolean(arena.player1),
-          hasP2: Boolean(arena.player2),
-          needSecondPlayer: Boolean(arena.needSecondPlayer),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   }
 
   if (arena.status === "fighting" && arena.battle) {

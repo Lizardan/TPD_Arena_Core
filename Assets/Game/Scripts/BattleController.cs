@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using TMPro;
 
 using UnityEngine;
@@ -557,6 +558,8 @@ namespace TPD.Arena
         {
 
             isPlaying = true;
+            if (miniAppPlayback)
+                NotifyMiniAppBattleStarted();
 
             startBattleButton.interactable = false;
 
@@ -599,6 +602,8 @@ namespace TPD.Arena
 
 
             ShowBattleResult();
+            if (miniAppPlayback)
+                NotifyMiniAppBattleFinished();
 
             FinishPlayback();
 
@@ -790,6 +795,28 @@ namespace TPD.Arena
 
             player2.UpdateState("Idle");
 
+        }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        [DllImport("__Internal")]
+        private static extern void TPD_Web_OnBattleStarted();
+
+        [DllImport("__Internal")]
+        private static extern void TPD_Web_OnBattleFinished();
+#endif
+
+        private static void NotifyMiniAppBattleStarted()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TPD_Web_OnBattleStarted();
+#endif
+        }
+
+        private static void NotifyMiniAppBattleFinished()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TPD_Web_OnBattleFinished();
+#endif
         }
 
     }

@@ -8,6 +8,9 @@
 /arena-lobby.js
   Cache-Control: no-store, no-cache, must-revalidate
 
+/unity-canvas-recorder.js
+  Cache-Control: no-store, no-cache, must-revalidate
+
 /version.json
   Cache-Control: no-store, no-cache, must-revalidate
 
