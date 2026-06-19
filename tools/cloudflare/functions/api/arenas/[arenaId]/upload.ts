@@ -5,7 +5,7 @@ import {
   arenaAnimationCaption,
   battleWinnerCaption,
   deleteMessage,
-  sendVideo,
+  sendAnimation,
 } from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
@@ -79,7 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     winnerCaption ?? arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
 
   try {
-    await sendVideo(token, arena.chatId, file, caption, filename);
+    await sendAnimation(token, arena.chatId, file, caption, filename);
     if (arena.messageId > 0) {
       try {
         await deleteMessage(token, arena.chatId, arena.messageId);
