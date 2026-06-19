@@ -64,6 +64,65 @@ body {
     }
   }
 
+  function ensureDebugWidget() {
+    const widgetId = "tpd-miniapp-debug-widget";
+    const styleId = "tpd-miniapp-debug-widget-style";
+
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+#${widgetId} {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 2147483647;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(5, 8, 16, 0.82);
+  border: 1px solid rgba(126, 166, 255, 0.45);
+  color: #dbe7ff;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+`;
+      document.head.appendChild(style);
+    }
+
+    let widget = document.getElementById(widgetId);
+    if (!widget) {
+      widget = document.createElement("div");
+      widget.id = widgetId;
+      document.body.appendChild(widget);
+    }
+    return widget;
+  }
+
+  function round(value) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value * 1000) / 1000
+      : value ?? "-";
+  }
+
+  function updateDebugWidget() {
+    const widget = ensureDebugWidget();
+    const tg = window.Telegram?.WebApp;
+    const width = window.innerWidth || 0;
+    const height = window.innerHeight || 0;
+    const ratio = height > 0 ? width / height : 0;
+
+    widget.textContent =
+      `inner: ${width} x ${height}\n` +
+      `ratio: ${round(ratio)}\n` +
+      `platform: ${tg?.platform || "-"}\n` +
+      `expanded: ${String(Boolean(tg?.isExpanded))}\n` +
+      `vpHeight: ${round(tg?.viewportHeight)}\n` +
+      `vpStable: ${round(tg?.viewportStableHeight)}`;
+  }
+
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -307,8 +366,15 @@ body {
   };
 
   ensureSquareGameFrame();
+  updateDebugWidget();
   window.addEventListener("resize", ensureSquareGameFrame);
+  window.addEventListener("resize", updateDebugWidget);
+  if (window.Telegram?.WebApp?.onEvent) {
+    window.Telegram.WebApp.onEvent("viewportChanged", updateDebugWidget);
+  }
   const frameInit = () => ensureSquareGameFrame();
   setTimeout(frameInit, 300);
   setTimeout(frameInit, 1000);
+  setTimeout(updateDebugWidget, 300);
+  setTimeout(updateDebugWidget, 1000);
 })();
