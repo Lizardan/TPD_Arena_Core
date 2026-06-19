@@ -53,6 +53,17 @@ export async function editMessageText(
   });
 }
 
+export async function answerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text?: string,
+): Promise<void> {
+  await callTelegram(token, "answerCallbackQuery", {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text } : {}),
+  });
+}
+
 export async function deleteMessage(
   token: string,
   chatId: number,
@@ -103,6 +114,42 @@ export function buildWebAppKeyboard(webAppUrl: string, buttonText = "Сгене�
         },
       ],
     ],
+  };
+}
+
+export function buildBotMenuKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "Запустить арену",
+          callback_data: "start_tpd_arena",
+        },
+      ],
+      [
+        {
+          text: "Остановить арену",
+          callback_data: "stop_tpd_arena",
+        },
+      ],
+    ],
+  };
+}
+
+export function buildBotReplyKeyboard() {
+  return {
+    keyboard: [
+      [
+        {
+          text: "Создать арену",
+        },
+        {
+          text: "Остановить арену",
+        },
+      ],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
   };
 }
 

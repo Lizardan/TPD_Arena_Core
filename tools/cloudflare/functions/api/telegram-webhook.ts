@@ -3,7 +3,9 @@ import { errorResponse, jsonResponse } from "../lib/env";
 import { createArena, getActiveArenaForChat, markArenaDone, updateArenaMessageId } from "../lib/arena-store";
 import { clearLastBotMessageId, getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
 import {
+  answerCallbackQuery,
   arenaWaitingText,
+  buildBotReplyKeyboard,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
   deleteMessage,
@@ -31,10 +33,28 @@ interface TelegramMessage {
   chat: TelegramChat;
   text?: string;
   from?: TelegramUser;
+  new_chat_members?: TelegramUser[];
 }
 
 interface TelegramUpdate {
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
+  my_chat_member?: TelegramChatMemberUpdated;
+}
+
+interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
+}
+
+interface TelegramChatMemberUpdated {
+  chat: TelegramChat;
+  new_chat_member: {
+    status: string;
+    user: TelegramUser;
+  };
 }
 
 function commandName(text: string): string {
@@ -91,15 +111,54 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Invalid Telegram update.", 400);
   }
 
-  const message = update.message;
-  if (!message?.text || !message.chat?.id) {
+  const myChatMember = update.my_chat_member;
+  const botAddedToGroup =
+    myChatMember &&
+    isGroupChat(myChatMember.chat) &&
+    ["member", "administrator"].includes(myChatMember.new_chat_member.status);
+  if (botAddedToGroup && myChatMember) {
+    const sent = await sendMessage(
+      token,
+      myChatMember.chat.id,
+      "Кнопки арены включены возле поля ввода.",
+      buildBotReplyKeyboard(),
+    );
+    await sleep(3000);
+    try {
+      await deleteMessage(token, myChatMember.chat.id, sent.message_id);
+    } catch {
+      // Ignore: Telegram may refuse delete in some chats.
+    }
+    return jsonResponse({ ok: true });
+  }
+
+  const callback = update.callback_query;
+  const message = update.message ?? callback?.message;
+  const callbackCommand =
+    callback?.data === "start_tpd_arena"
+      ? "/start_tpd_arena"
+      : callback?.data === "stop_tpd_arena"
+        ? "/stop_tpd_arena"
+        : null;
+
+  if (!message?.chat?.id || (!update.message?.text && !callbackCommand)) {
+    if (callback?.id) {
+      await answerCallbackQuery(token, callback.id, "Неизвестная кнопка.");
+    }
     return jsonResponse({ ok: true });
   }
 
   const chatId = message.chat.id;
-  const text = message.text.trim();
+  const rawText = callbackCommand ?? update.message?.text?.trim() ?? "";
+  const text =
+    rawText === "Создать арену" || rawText === "Выйти на арену" || rawText === "Запустить арену"
+      ? "/start_tpd_arena"
+      : rawText === "Остановить арену"
+        ? "/stop_tpd_arena"
+        : rawText;
   const command = commandName(text);
-  const sourceMessageId = message.message_id;
+  const sourceMessageId = update.message?.message_id ?? 0;
+  const actor = update.message?.from ?? callback?.from;
   const kv = context.env.ARENA_KV;
 
   async function tryDeleteSourceMessage(): Promise<void> {
@@ -157,14 +216,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   try {
+    if (callback?.id) {
+      await answerCallbackQuery(token, callback.id);
+    }
+
     if (command.startsWith("/") || text.startsWith("{")) {
       await tryDeleteSourceMessage();
     }
 
     if (command === "/start") {
       await sendPersistentMessage(
-        "Отправьте /start_tpd_arena в групповом чате или /battle с JSON в личке.\n\n" +
+        "Кнопки управления ареной включены возле поля ввода.\n\n" +
+          "Для группы: /start_tpd_arena\n" +
+          "Остановить арену: /stop_tpd_arena\n\n" +
           'Пример:\n/battle {"leftHp":80,"rightHp":100,"leftName":"Левый","rightName":"Правый"}',
+        buildBotReplyKeyboard(),
       );
       return jsonResponse({ ok: true });
     }
@@ -232,7 +298,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         return jsonResponse({ ok: true });
       }
 
-      const openerName = message.from ? displayName(message.from) : "Игрок";
+      const openerName = actor ? displayName(actor) : "Игрок";
       const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
 

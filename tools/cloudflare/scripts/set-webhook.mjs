@@ -31,6 +31,7 @@ async function callTelegram(method, body) {
 await callTelegram("setWebhook", {
   url: webhookUrl,
   secret_token: webhookSecret,
+  allowed_updates: ["message", "callback_query", "my_chat_member"],
 });
 
 await callTelegram("setMyCommands", {

@@ -87,6 +87,10 @@ function randomHpValue(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function generateMockBattlePayload(): BattlePayload {
   return {
     leftHp: randomHpValue(BATTLE_HP_MIN, BATTLE_HP_MAX),
@@ -166,12 +170,16 @@ function mergeExistingPlayersAsClaims(
 async function reconcileArenaPlayersFromClaims(
   kv: KVNamespace,
   arena: ArenaRecord,
+  additionalClaims: ArenaJoinClaim[] = [],
 ): Promise<ArenaRecord> {
   if (arena.status === "done" || arena.status === "expired") {
     return arena;
   }
 
-  const claims = mergeExistingPlayersAsClaims(arena, await listJoinClaims(kv, arena.id));
+  const claims = mergeExistingPlayersAsClaims(
+    arena,
+    [...(await listJoinClaims(kv, arena.id)), ...additionalClaims],
+  );
   const player1 = claims[0] ? { id: claims[0].id, displayName: claims[0].displayName } : null;
   const player2 = claims[1] ? { id: claims[1].id, displayName: claims[1].displayName } : null;
   const status: ArenaStatus = player1 && player2 ? "fighting" : "waiting";
@@ -283,16 +291,23 @@ export async function joinArena(
     arena.player1 &&
     arena.player2 &&
     (arena.player1.id === player.id || arena.player2.id === player.id);
-  if (arena.status === "fighting" && !alreadyInFightingArena) {
-    throw new Error("Вы не успели зайти в бой. Ждите следующую арену.");
-  }
 
-  if (!alreadyInFightingArena) {
-    await putJoinClaim(kv, arenaId, player);
-  }
+  const claim = alreadyInFightingArena ? null : await putJoinClaim(kv, arenaId, player);
 
-  const reconciled = await reconcileArenaPlayersFromClaims(kv, arena);
-  const role = roleForUser(reconciled, player.id);
+  let reconciled = await reconcileArenaPlayersFromClaims(
+    kv,
+    arena,
+    claim ? [claim] : [],
+  );
+  let role = roleForUser(reconciled, player.id);
+  if (claim && role === "spectator") {
+    await sleep(200);
+    const refreshed = await getArena(kv, arenaId);
+    if (refreshed) {
+      reconciled = await reconcileArenaPlayersFromClaims(kv, refreshed, [claim]);
+      role = roleForUser(reconciled, player.id);
+    }
+  }
   if (role === "spectator") {
     throw new Error("Вы не успели зайти в бой. Ждите следующую арену.");
   }
