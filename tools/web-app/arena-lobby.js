@@ -171,8 +171,14 @@ async function runArenaLobby(id) {
     setStatus("Оба бойца на месте!");
     setDetail(fightingDetail(arena));
     await sleep(400);
+    const leftName = arena.player1?.displayName || "Левый";
+    const rightName = arena.player2?.displayName || "Правый";
     launchUnity({
-      battle: arena.battle,
+      battle: {
+        ...arena.battle,
+        leftName,
+        rightName,
+      },
       arena: arena.id,
       isHost: arena.isHost,
     });
@@ -190,8 +196,13 @@ async function runArenaLobby(id) {
 async function runSessionLobby(id) {
   setStatus("Загрузка боя…");
   const session = await fetchSession(id);
+  const battle = {
+    ...session.battle,
+    leftName: session.battle?.leftName || "Левый",
+    rightName: session.battle?.rightName || "Правый",
+  };
   launchUnity({
-    battle: session.battle,
+    battle,
     session: session.sessionId || id,
     isHost: true,
   });

@@ -6,6 +6,7 @@ import {
   arenaWaitingText,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
+  editMessageText,
   resolveBotUsername,
   sendMessage,
 } from "../lib/telegram";
@@ -99,7 +100,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         token,
         chatId,
         "Отправьте /arena в групповом чате или /battle с JSON в личке.\n\n" +
-          'Пример:\n/battle {"leftHp":80,"rightHp":100}',
+          'Пример:\n/battle {"leftHp":80,"rightHp":100,"leftName":"Левый","rightName":"Правый"}',
       );
       return jsonResponse({ ok: true });
     }
@@ -166,12 +167,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const battle = extractJsonFromMessage(text);
       const ownerUserId = message.from?.id ?? chatId;
-      const sessionId = await createSessionId(chatId, battle, token, ownerUserId);
-      const webAppUrl = `${context.env.WEB_APP_URL.replace(/\/$/, "")}/?session=${encodeURIComponent(sessionId)}`;
-
-      await sendMessage(
+      const sent = await sendMessage(
         token,
         chatId,
+        "Нажмите кнопку ниже. Бой отрисуется на вашем устройстве, затем видео придёт в этот чат.",
+      );
+      const sessionId = await createSessionId(chatId, battle, token, ownerUserId, sent.message_id);
+      const webAppUrl = `${context.env.WEB_APP_URL.replace(/\/$/, "")}/?session=${encodeURIComponent(sessionId)}`;
+
+      await editMessageText(
+        token,
+        chatId,
+        sent.message_id,
         "Нажмите кнопку ниже. Бой отрисуется на вашем устройстве, затем видео придёт в этот чат.",
         buildWebAppKeyboard(webAppUrl),
       );

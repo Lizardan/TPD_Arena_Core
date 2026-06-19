@@ -150,6 +150,7 @@ body {
     const filename = `${targetType}-${targetId}.${ext}`;
     const formData = new FormData();
     formData.append("file", blob, filename);
+    formData.append("winner", String(state.winnerSide || 0));
 
     let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -184,6 +185,7 @@ body {
     stream: null,
     chunks: [],
     mimeType: "",
+    winnerSide: 0,
   };
 
   async function startRecording() {
@@ -204,6 +206,7 @@ body {
     }
 
     try {
+      state.winnerSide = 0;
       // Keep actual rendered frame deterministic for upload output.
       if (canvas.width !== TARGET_WIDTH || canvas.height !== TARGET_HEIGHT) {
         canvas.width = TARGET_WIDTH;
@@ -266,8 +269,10 @@ body {
     }
   }
 
-  function stopRecording() {
+  function stopRecording(winnerSide = 0) {
     if (!state.recording || !state.recorder) return;
+    const parsed = Number(winnerSide);
+    state.winnerSide = Number.isFinite(parsed) ? parsed : 0;
     state.recording = false;
     if (state.recorder.state !== "inactive") {
       state.recorder.stop();

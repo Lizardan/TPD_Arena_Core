@@ -6,6 +6,29 @@ export interface BattlePayload {
   rightHp: number;
   leftAbilities?: string[];
   rightAbilities?: string[];
+  leftName?: string;
+  rightName?: string;
+}
+
+const MAX_NAME_LEN = 64;
+
+function parseOptionalName(
+  record: Record<string, unknown>,
+  key: "leftName" | "rightName",
+): string | undefined {
+  const raw = record[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") {
+    throw new Error(`${key} должно быть строкой.`);
+  }
+  const name = raw.trim();
+  if (!name) {
+    throw new Error(`${key} не должно быть пустым.`);
+  }
+  if (name.length > MAX_NAME_LEN) {
+    throw new Error(`${key} слишком длинное (максимум ${MAX_NAME_LEN} символа).`);
+  }
+  return name;
 }
 
 export function validateBattlePayload(payload: unknown): BattlePayload {
@@ -46,6 +69,11 @@ export function validateBattlePayload(payload: unknown): BattlePayload {
     }
     battle[side] = abilities;
   }
+
+  const leftName = parseOptionalName(record, "leftName");
+  const rightName = parseOptionalName(record, "rightName");
+  if (leftName) battle.leftName = leftName;
+  if (rightName) battle.rightName = rightName;
 
   return battle;
 }

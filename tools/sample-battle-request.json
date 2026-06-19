@@ -1,4 +1,6 @@
 {
   "leftHp": 80,
-  "rightHp": 100
+  "rightHp": 100,
+  "leftName": "Левый",
+  "rightName": "Правый"
 }

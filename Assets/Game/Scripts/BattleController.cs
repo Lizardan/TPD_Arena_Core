@@ -51,6 +51,8 @@ namespace TPD.Arena
 
         public TextMeshProUGUI exportStatusText;
 
+        public TextMeshProUGUI namesText;
+
         public AudioListener exportAudioListener;
 
         [Header("Editor Debug")]
@@ -82,6 +84,8 @@ namespace TPD.Arena
 
         private int? requestLeftHp;
         private int? requestRightHp;
+        private string leftFighterName = "Левый";
+        private string rightFighterName = "Правый";
 
         private int LeftMaxHp => requestLeftHp ?? MaxHealth;
         private int RightMaxHp => requestRightHp ?? MaxHealth;
@@ -96,8 +100,11 @@ namespace TPD.Arena
 
             requestLeftHp = request.leftHp;
             requestRightHp = request.rightHp;
+            leftFighterName = SanitizeName(request.leftName, "Левый");
+            rightFighterName = SanitizeName(request.rightName, "Правый");
             player1.SetMaxHP(LeftMaxHp);
             player2.SetMaxHP(RightMaxHp);
+            UpdateNamesLabel();
         }
 
         /// <summary>
@@ -204,6 +211,13 @@ namespace TPD.Arena
 
             player2.SetMaxHP(RightMaxHp);
 
+            if (namesText == null)
+            {
+                var namesGo = GameObject.Find("Text (TMP) (1)");
+                if (namesGo != null)
+                    namesText = namesGo.GetComponent<TextMeshProUGUI>();
+            }
+
 
 
             startBattleButton.gameObject.SetActive(false);
@@ -239,6 +253,7 @@ namespace TPD.Arena
             UpdateStartButtonLabel();
 
             SetExportStatus(string.Empty);
+            UpdateNamesLabel();
 
         }
 
@@ -601,9 +616,9 @@ namespace TPD.Arena
 
 
 
-            ShowBattleResult();
+            int winnerSide = ShowBattleResult();
             if (miniAppPlayback)
-                NotifyMiniAppBattleFinished();
+                NotifyMiniAppBattleFinished(winnerSide);
 
             FinishPlayback();
 
@@ -735,7 +750,7 @@ namespace TPD.Arena
 
 
 
-        private void ShowBattleResult()
+        private int ShowBattleResult()
 
         {
 
@@ -756,12 +771,18 @@ namespace TPD.Arena
 
 
             if (s1.hp <= 0 && s2.hp > 0)
-
+            {
                 player2.UpdateState("Won");
+                return 2;
+            }
 
-            else if (s2.hp <= 0 && s1.hp > 0)
-
+            if (s2.hp <= 0 && s1.hp > 0)
+            {
                 player1.UpdateState("Won");
+                return 1;
+            }
+
+            return 0;
 
         }
 
@@ -795,6 +816,23 @@ namespace TPD.Arena
 
             player2.UpdateState("Idle");
 
+            UpdateNamesLabel();
+
+        }
+
+        private void UpdateNamesLabel()
+        {
+            if (namesText == null)
+                return;
+            namesText.text = $"{leftFighterName} vs {rightFighterName}";
+        }
+
+        private static string SanitizeName(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return fallback;
+            value = value.Trim();
+            return value.Length > 64 ? value.Substring(0, 64) : value;
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -802,7 +840,7 @@ namespace TPD.Arena
         private static extern void TPD_Web_OnBattleStarted();
 
         [DllImport("__Internal")]
-        private static extern void TPD_Web_OnBattleFinished();
+        private static extern void TPD_Web_OnBattleFinished(int winnerSide);
 #endif
 
         private static void NotifyMiniAppBattleStarted()
@@ -812,10 +850,10 @@ namespace TPD.Arena
 #endif
         }
 
-        private static void NotifyMiniAppBattleFinished()
+        private static void NotifyMiniAppBattleFinished(int winnerSide)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            TPD_Web_OnBattleFinished();
+            TPD_Web_OnBattleFinished(winnerSide);
 #endif
         }
 

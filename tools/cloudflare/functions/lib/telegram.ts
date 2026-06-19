@@ -53,6 +53,17 @@ export async function editMessageText(
   });
 }
 
+export async function deleteMessage(
+  token: string,
+  chatId: number,
+  messageId: number,
+): Promise<void> {
+  await callTelegram(token, "deleteMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+  });
+}
+
 export async function sendAnimation(
   token: string,
   chatId: number,
@@ -224,4 +235,23 @@ export function arenaAnimationCaption(
   rightHp: number,
 ): string {
   return `Бой: ${player1Name} (${leftHp} HP) против ${player2Name} (${rightHp} HP)`;
+}
+
+export function battleWinnerCaption(
+  leftName: string,
+  rightName: string,
+  winnerSide: number | null | undefined,
+): string | null {
+  const left = leftName?.trim() || "Игрок 1";
+  const right = rightName?.trim() || "Игрок 2";
+  if (winnerSide === 1) {
+    return `${left} победил ${right}`;
+  }
+  if (winnerSide === 2) {
+    return `${right} победил ${left}`;
+  }
+  if (winnerSide === 0) {
+    return "Ничья";
+  }
+  return null;
 }

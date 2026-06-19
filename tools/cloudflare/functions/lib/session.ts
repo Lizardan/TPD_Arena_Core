@@ -6,6 +6,7 @@ export interface SessionData {
   chatId: number;
   userId: number;
   battle: BattlePayload;
+  promptMessageId?: number;
   exp: number;
 }
 
@@ -59,11 +60,13 @@ export async function createSessionId(
   battle: BattlePayload,
   secret: string,
   userId: number,
+  promptMessageId?: number,
 ): Promise<string> {
   const payload: SessionData = {
     chatId,
     userId,
     battle,
+    ...(typeof promptMessageId === "number" ? { promptMessageId } : {}),
     exp: Date.now() + SESSION_TTL_MS,
   };
   const data = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
@@ -92,6 +95,9 @@ export async function verifySessionId(
       typeof payload.userId !== "number" ||
       !payload.battle
     ) {
+      return null;
+    }
+    if (payload.promptMessageId != null && typeof payload.promptMessageId !== "number") {
       return null;
     }
     if (payload.exp < Date.now()) return null;

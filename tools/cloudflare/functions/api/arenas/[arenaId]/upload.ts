@@ -1,7 +1,12 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { getArena, markArenaDone } from "../../../lib/arena-store";
-import { arenaAnimationCaption, sendAnimation } from "../../../lib/telegram";
+import {
+  arenaAnimationCaption,
+  battleWinnerCaption,
+  deleteMessage,
+  sendAnimation,
+} from "../../../lib/telegram";
 import { verifyWebAppInitData } from "../../../lib/telegram-init";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -47,6 +52,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const form = await context.request.formData();
+  const rawWinner = form.get("winner");
+  const parsedWinner =
+    typeof rawWinner === "string" ? Number.parseInt(rawWinner.trim(), 10) : Number.NaN;
+  const winnerSide = [0, 1, 2].includes(parsedWinner) ? parsedWinner : null;
   const rawFile = form.get("file");
   if (!rawFile || typeof rawFile === "string") {
     return errorResponse("Missing video file.", 400);
@@ -65,10 +74,19 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const filename = `arena-${arenaId}.mp4`;
   const p1 = arena.player1?.displayName || "Игрок 1";
   const p2 = arena.player2?.displayName || "Игрок 2";
-  const caption = arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
+  const winnerCaption = battleWinnerCaption(p1, p2, winnerSide);
+  const caption =
+    winnerCaption ?? arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
 
   try {
     await sendAnimation(token, arena.chatId, file, caption, filename);
+    if (arena.messageId > 0) {
+      try {
+        await deleteMessage(token, arena.chatId, arena.messageId);
+      } catch (error) {
+        console.warn("deleteMessage (arena prompt) failed:", error);
+      }
+    }
     await markArenaDone(kv, arenaId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send video.";

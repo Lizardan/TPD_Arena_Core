@@ -12,6 +12,8 @@ namespace TPD.Arena
 
         public int leftHp = 100;
         public int rightHp = 100;
+        public string leftName = "Левый";
+        public string rightName = "Правый";
         public string[] leftAbilities;
         public string[] rightAbilities;
 
@@ -79,8 +81,21 @@ namespace TPD.Arena
                 return false;
             }
 
+            leftName = SanitizeName(leftName, "Левый");
+            rightName = SanitizeName(rightName, "Правый");
+
             error = null;
             return true;
+        }
+
+        private static string SanitizeName(string value, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return fallback;
+
+            value = value.Trim();
+            const int maxLen = 64;
+            return value.Length > maxLen ? value.Substring(0, maxLen) : value;
         }
     }
 }

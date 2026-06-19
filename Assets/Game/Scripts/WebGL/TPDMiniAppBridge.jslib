@@ -8,10 +8,10 @@ mergeInto(LibraryManager.library, {
     }
   },
 
-  TPD_Web_OnBattleFinished: function () {
+  TPD_Web_OnBattleFinished: function (winnerSide) {
     try {
       if (window.TPDMiniAppRecorder && typeof window.TPDMiniAppRecorder.onBattleFinished === "function") {
-        window.TPDMiniAppRecorder.onBattleFinished();
+        window.TPDMiniAppRecorder.onBattleFinished(Number(winnerSide) || 0);
       }
     } catch (e) {
     }
