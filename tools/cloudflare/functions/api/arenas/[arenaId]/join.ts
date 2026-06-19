@@ -87,7 +87,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       currentArena.status === "waiting"
     ) {
       return errorResponse(
-        `Кнопка устарела. Откройте активную арену с кодом ${activeArena.id}.`,
+        "Кнопка устарела. Ждите следующую арену.",
         409,
       );
     }

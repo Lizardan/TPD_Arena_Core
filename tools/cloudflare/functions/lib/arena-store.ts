@@ -173,19 +173,7 @@ export async function joinArena(
     }
 
     if (arena.status === "fighting") {
-      if (!arena.spectatorIds.includes(player.id)) {
-        arena.spectatorIds.push(player.id);
-        await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
-          expirationTtl: ARENA_TTL_SEC,
-        });
-      }
-      const persisted = (await getArena(kv, arena.id)) ?? arena;
-      return {
-        arena: persisted,
-        role: "spectator",
-        isHost: false,
-        justStarted: false,
-      };
+      throw new Error("Вы не успели зайти в бой. Ждите следующую арену.");
     }
 
     if (!arena.player1) {
@@ -237,19 +225,7 @@ export async function joinArena(
         justStarted: true,
       };
     } else {
-      if (!arena.spectatorIds.includes(player.id)) {
-        arena.spectatorIds.push(player.id);
-      }
-      await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
-        expirationTtl: ARENA_TTL_SEC,
-      });
-      const persisted = (await getArena(kv, arena.id)) ?? arena;
-      return {
-        arena: persisted,
-        role: "spectator",
-        isHost: persisted.hostUserId === player.id,
-        justStarted: false,
-      };
+      throw new Error("Вы не успели зайти в бой. Ждите следующую арену.");
     }
   }
 

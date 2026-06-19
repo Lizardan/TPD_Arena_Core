@@ -2,7 +2,6 @@ import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
 import { createArena, getActiveArenaForChat, updateArenaMessageId } from "../lib/arena-store";
 import {
-  arenaAlreadyOpenText,
   arenaWaitingText,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
@@ -111,18 +110,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       await sendMessage(
         token,
         chatId,
-        "Отправьте /arena в групповом чате или /battle с JSON в личке.\n\n" +
+        "Отправьте /start_tpd_arena в групповом чате или /battle с JSON в личке.\n\n" +
           'Пример:\n/battle {"leftHp":80,"rightHp":100,"leftName":"Левый","rightName":"Правый"}',
       );
       return jsonResponse({ ok: true });
     }
 
     if (command === "/arena") {
+      await sendMessage(
+        token,
+        chatId,
+        "Команда обновлена. Используйте /start_tpd_arena.",
+      );
+      return jsonResponse({ ok: true });
+    }
+
+    if (command === "/start_tpd_arena") {
       if (!isGroupChat(message.chat)) {
         await sendMessage(
           token,
           chatId,
-          "Команда /arena работает в групповом чате. Добавьте бота в группу и вызовите арену там.",
+          "Команда /start_tpd_arena работает в групповом чате. Добавьте бота в группу и вызовите арену там.",
         );
         return jsonResponse({ ok: true });
       }
@@ -141,13 +149,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (existing) {
-        const buttonText =
-          existing.status === "fighting" ? "Смотреть бой (ПК)" : "Войти на арену (ПК)";
+        const lockedText =
+          existing.status === "fighting"
+            ? "Сейчас уже идёт бой. Новая арена будет доступна после отправки видео в чат."
+            : "Арена уже открыта и ждёт второго бойца. Новую арену можно запустить после завершения текущей.";
         await sendMessage(
           token,
           chatId,
-          arenaAlreadyOpenText(existing),
-          buildGroupArenaKeyboard(botUsername, existing.id, buttonText, miniApp),
+          lockedText,
         );
         return jsonResponse({ ok: true });
       }
@@ -174,7 +183,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         await sendMessage(
           token,
           chatId,
-          "В группе используйте /arena. /battle — для личных сообщений с ботом.",
+          "В группе используйте /start_tpd_arena. /battle — для личных сообщений с ботом.",
         );
         return jsonResponse({ ok: true });
       }
