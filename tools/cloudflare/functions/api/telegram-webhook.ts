@@ -1,14 +1,15 @@
 import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
 import { createArena, getActiveArenaForChat, markArenaDone, updateArenaMessageId } from "../lib/arena-store";
-import { clearLastBotMessageId, getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
+import { getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
 import {
   answerCallbackQuery,
+  arenaFightingText,
   arenaWaitingText,
   buildBotReplyKeyboard,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
-  deleteMessage,
+  deleteMessageQuiet,
   editMessageText,
   resolveBotUsername,
   sendMessage,
@@ -51,10 +52,117 @@ interface TelegramCallbackQuery {
 
 interface TelegramChatMemberUpdated {
   chat: TelegramChat;
+  old_chat_member: {
+    status: string;
+    user: TelegramUser;
+  };
   new_chat_member: {
     status: string;
     user: TelegramUser;
   };
+}
+
+const SETUP_KEYBOARD_MESSAGE =
+  "Кнопки арены включены возле поля ввода.\n\n" +
+  "Чтобы нажатия кнопок не оставались в чате, дайте боту права администратора: «Удаление сообщений».";
+
+const STOPPED_ARENA_MESSAGE = "Текущая арена остановлена. Можно запускать новую.";
+
+interface BotMessageRestore {
+  text: string;
+  replyMarkup?: Record<string, unknown>;
+}
+
+async function deleteTrackedBotMessage(
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+  messageId: number | null | undefined,
+): Promise<void> {
+  if (!messageId || messageId <= 0) return;
+  await deleteMessageQuiet(token, chatId, messageId);
+}
+
+async function sendPersistentBotMessage(
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+  messageText: string,
+  replyMarkup?: Record<string, unknown>,
+): Promise<{ message_id: number }> {
+  const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
+  const sent = await sendMessage(token, chatId, messageText, replyMarkup);
+  if (kv) {
+    await setLastBotMessageId(kv, chatId, sent.message_id);
+  }
+  if (previousMessageId && previousMessageId !== sent.message_id) {
+    await deleteTrackedBotMessage(token, kv, chatId, previousMessageId);
+  }
+  return sent;
+}
+
+async function replacePersistentBotMessage(
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+  messageText: string,
+  replyMarkup?: Record<string, unknown>,
+): Promise<{ message_id: number }> {
+  const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
+  if (previousMessageId) {
+    try {
+      await editMessageText(token, chatId, previousMessageId, messageText, replyMarkup);
+      return { message_id: previousMessageId };
+    } catch {
+      // Fall back to a new message if Telegram cannot edit the previous one.
+    }
+  }
+  return sendPersistentBotMessage(token, kv, chatId, messageText, replyMarkup);
+}
+
+async function sendTemporaryNotice(
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+  noticeText: string,
+  restore?: BotMessageRestore,
+  ttlMs = 3000,
+): Promise<void> {
+  const trackedMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
+  if (trackedMessageId && restore) {
+    try {
+      await editMessageText(token, chatId, trackedMessageId, noticeText);
+      await sleep(Math.max(0, ttlMs));
+      await editMessageText(token, chatId, trackedMessageId, restore.text, restore.replyMarkup);
+      return;
+    } catch {
+      // Fall back below if edit is not possible.
+    }
+  }
+
+  const previousMessageId = trackedMessageId;
+  const sent = await sendMessage(token, chatId, noticeText);
+  await sleep(Math.max(0, ttlMs));
+  await deleteTrackedBotMessage(token, kv, chatId, sent.message_id);
+  if (restore) {
+    await sendPersistentBotMessage(token, kv, chatId, restore.text, restore.replyMarkup);
+  } else if (previousMessageId) {
+    await deleteTrackedBotMessage(token, kv, chatId, previousMessageId);
+  }
+}
+
+async function sendSetupKeyboardMessage(
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+): Promise<{ message_id: number }> {
+  return replacePersistentBotMessage(
+    token,
+    kv,
+    chatId,
+    SETUP_KEYBOARD_MESSAGE,
+    buildBotReplyKeyboard(),
+  );
 }
 
 function commandName(text: string): string {
@@ -70,6 +178,25 @@ function displayName(user: TelegramUser): string {
 
 function isGroupChat(chat: TelegramChat): boolean {
   return chat.type === "group" || chat.type === "supergroup";
+}
+
+function normalizeUserText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function mapReplyKeyboardText(rawText: string): string | null {
+  const normalized = normalizeUserText(rawText);
+  if (
+    normalized === "Создать арену" ||
+    normalized === "Выйти на арену" ||
+    normalized === "Запустить арену"
+  ) {
+    return "/start_tpd_arena";
+  }
+  if (normalized === "Остановить арену") {
+    return "/stop_tpd_arena";
+  }
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -112,21 +239,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const myChatMember = update.my_chat_member;
-  const botAddedToGroup =
+  const botJoinedGroup =
     myChatMember &&
     isGroupChat(myChatMember.chat) &&
+    ["left", "kicked"].includes(myChatMember.old_chat_member.status) &&
     ["member", "administrator"].includes(myChatMember.new_chat_member.status);
-  if (botAddedToGroup && myChatMember) {
-    const sent = await sendMessage(
-      token,
-      myChatMember.chat.id,
-      "Кнопки арены включены возле поля ввода.",
-      buildBotReplyKeyboard(),
-    );
-    const kv = context.env.ARENA_KV;
-    if (kv) {
-      await setLastBotMessageId(kv, myChatMember.chat.id, sent.message_id);
-    }
+  if (botJoinedGroup && myChatMember) {
+    await sendSetupKeyboardMessage(token, context.env.ARENA_KV, myChatMember.chat.id);
     return jsonResponse({ ok: true });
   }
 
@@ -147,100 +266,46 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const chatId = message.chat.id;
-  const rawText = callbackCommand ?? update.message?.text?.trim() ?? "";
-  const isReplyKeyboardAction =
-    rawText === "Создать арену" ||
-    rawText === "Выйти на арену" ||
-    rawText === "Запустить арену" ||
-    rawText === "Остановить арену";
-  const text =
-    rawText === "Создать арену" || rawText === "Выйти на арену" || rawText === "Запустить арену"
-      ? "/start_tpd_arena"
-      : rawText === "Остановить арену"
-        ? "/stop_tpd_arena"
-        : rawText;
+  const rawText = callbackCommand ?? update.message?.text ?? "";
+  const mappedReplyKeyboard = update.message?.text ? mapReplyKeyboardText(rawText) : null;
+  const isReplyKeyboardAction = mappedReplyKeyboard != null;
+  const text = mappedReplyKeyboard ?? normalizeUserText(rawText);
   const command = commandName(text);
   const sourceMessageId = update.message?.message_id ?? 0;
   const actor = update.message?.from ?? callback?.from;
   const kv = context.env.ARENA_KV;
 
-  async function tryDeleteSourceMessage(): Promise<void> {
-    if (!sourceMessageId || sourceMessageId <= 0) return;
-    try {
-      await deleteMessage(token, chatId, sourceMessageId);
-    } catch {
-      // Ignore: bot might not have rights to delete user messages in some chats.
-    }
+  async function tryDeleteUserMessage(): Promise<boolean> {
+    if (!sourceMessageId || sourceMessageId <= 0) return false;
+    return deleteMessageQuiet(token, chatId, sourceMessageId);
   }
 
-  async function sendPersistentMessage(
-    messageText: string,
-    replyMarkup?: Record<string, unknown>,
-  ): Promise<{ message_id: number }> {
-    const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
-    const sent = await sendMessage(token, chatId, messageText, replyMarkup);
-    if (kv) {
-      await setLastBotMessageId(kv, chatId, sent.message_id);
-    }
-    if (previousMessageId && previousMessageId !== sent.message_id) {
-      try {
-        await deleteMessage(token, chatId, previousMessageId);
-      } catch {
-        // Ignore: previous message may already be deleted or inaccessible.
-      }
-    }
-    return sent;
-  }
-
-  async function replacePersistentMessage(
-    messageText: string,
-    replyMarkup?: Record<string, unknown>,
-  ): Promise<{ message_id: number }> {
-    const previousMessageId = kv ? await getLastBotMessageId(kv, chatId) : null;
-    if (previousMessageId) {
-      try {
-        await editMessageText(token, chatId, previousMessageId, messageText, replyMarkup);
-        return { message_id: previousMessageId };
-      } catch {
-        // Fall back to a new message if Telegram cannot edit the previous one.
-      }
-    }
-    return sendPersistentMessage(messageText, replyMarkup);
-  }
-
-  async function sendTemporaryNotice(messageText: string, ttlMs = 3000): Promise<void> {
-    const sent = await sendMessage(token, chatId, messageText);
-    await sleep(Math.max(0, ttlMs));
-    try {
-      await deleteMessage(token, chatId, sent.message_id);
-    } catch {
-      // Ignore: Telegram may refuse delete in some chats.
-    }
-  }
+  const setupRestore: BotMessageRestore = {
+    text: SETUP_KEYBOARD_MESSAGE,
+    replyMarkup: buildBotReplyKeyboard(),
+  };
 
   try {
     if (callback?.id) {
       await answerCallbackQuery(token, callback.id);
     }
 
-    if (!isReplyKeyboardAction && (command.startsWith("/") || text.startsWith("{"))) {
-      await tryDeleteSourceMessage();
+    if (isReplyKeyboardAction || command.startsWith("/") || text.startsWith("{")) {
+      await tryDeleteUserMessage();
     }
 
     if (command === "/start") {
-      await sendPersistentMessage(
-        "Кнопки управления ареной включены возле поля ввода.\n\n" +
-          "Для группы: /start_tpd_arena\n" +
-          "Остановить арену: /stop_tpd_arena\n\n" +
-          'Пример:\n/battle {"leftHp":80,"rightHp":100,"leftName":"Левый","rightName":"Правый"}',
-        buildBotReplyKeyboard(),
-      );
+      await sendSetupKeyboardMessage(token, kv, chatId);
       return jsonResponse({ ok: true });
     }
 
     if (command === "/arena") {
-      await sendPersistentMessage(
-        "Команда обновлена. Используйте /start_tpd_arena.",
+      await sendPersistentBotMessage(
+        token,
+        kv,
+        chatId,
+        "Команда обновлена. Используйте кнопку «Создать арену».",
+        buildBotReplyKeyboard(),
       );
       return jsonResponse({ ok: true });
     }
@@ -248,62 +313,67 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (command === "/stop_tpd_arena") {
       if (!isGroupChat(message.chat)) {
         await sendTemporaryNotice(
+          token,
+          kv,
+          chatId,
           "Команда остановки арены работает в групповом чате.",
-          3000,
         );
-        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
       if (!kv) {
-        await sendTemporaryNotice("Арена временно недоступна (KV не настроен).", 3000);
-        await tryDeleteSourceMessage();
+        await sendTemporaryNotice(
+          token,
+          kv,
+          chatId,
+          "Арена временно недоступна (KV не настроен).",
+        );
         return jsonResponse({ ok: true });
       }
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (!existing) {
-        await sendTemporaryNotice("Активной арены сейчас нет.", 3000);
-        await tryDeleteSourceMessage();
+        await sendTemporaryNotice(
+          token,
+          kv,
+          chatId,
+          "Активной арены сейчас нет.",
+          setupRestore,
+        );
         return jsonResponse({ ok: true });
       }
 
       await markArenaDone(kv, existing.id);
-
-      const staleMessageIds = new Set<number>();
-      const lastMessageId = await getLastBotMessageId(kv, chatId);
-      if (lastMessageId) staleMessageIds.add(lastMessageId);
-      if (existing.messageId > 0) staleMessageIds.add(existing.messageId);
-
-      for (const messageId of staleMessageIds) {
-        try {
-          await deleteMessage(token, chatId, messageId);
-        } catch {
-          // Ignore: message may already be deleted or Telegram may refuse deletion.
+      if (existing.messageId > 0) {
+        const trackedMessageId = await getLastBotMessageId(kv, chatId);
+        if (trackedMessageId !== existing.messageId) {
+          await deleteTrackedBotMessage(token, kv, chatId, existing.messageId);
         }
       }
-      await clearLastBotMessageId(kv, chatId);
 
-      await sendPersistentMessage(
-        "Текущая арена остановлена. Можно запускать новую.",
+      await sendPersistentBotMessage(
+        token,
+        kv,
+        chatId,
+        STOPPED_ARENA_MESSAGE,
         buildBotReplyKeyboard(),
       );
-      await tryDeleteSourceMessage();
       return jsonResponse({ ok: true });
     }
 
     if (command === "/start_tpd_arena") {
       if (!isGroupChat(message.chat)) {
-        await sendPersistentMessage(
+        await sendPersistentBotMessage(
+          token,
+          kv,
+          chatId,
           "Команда /start_tpd_arena работает в групповом чате. Добавьте бота в группу и вызовите арену там.",
         );
-        await tryDeleteSourceMessage();
         return jsonResponse({ ok: true });
       }
 
       if (!kv) {
-        await sendPersistentMessage("Арена временно недоступна (KV не настроен).");
-        await tryDeleteSourceMessage();
+        await sendPersistentBotMessage(token, kv, chatId, "Арена временно недоступна (KV не настроен).");
         return jsonResponse({ ok: true });
       }
 
@@ -317,8 +387,38 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           existing.status === "fighting"
             ? "Сейчас уже идёт бой. Новая арена будет доступна после отправки видео в чат."
             : "Арена уже открыта и ждёт второго бойца. Новую арену можно запустить после завершения текущей.";
-        await sendTemporaryNotice(lockedText, 3000);
-        await tryDeleteSourceMessage();
+        let restore: BotMessageRestore;
+        if (existing.status === "fighting" && existing.player1 && existing.player2) {
+          restore = {
+            text:
+              `${arenaFightingText(
+                existing.player1.displayName,
+                existing.player2.displayName,
+                existing.id,
+              )}\n\n` + "Набор закрыт. Если не успели — ждите следующую арену.",
+          };
+        } else if (existing.player1) {
+          restore = {
+            text: arenaWaitingText(existing.openerName, existing.player1, existing.id),
+            replyMarkup: buildGroupArenaKeyboard(
+              botUsername,
+              existing.id,
+              "Войти на арену (ПК)",
+              miniApp,
+            ),
+          };
+        } else {
+          restore = {
+            text: arenaWaitingText(existing.openerName, null, existing.id),
+            replyMarkup: buildGroupArenaKeyboard(
+              botUsername,
+              existing.id,
+              "Войти на арену (ПК)",
+              miniApp,
+            ),
+          };
+        }
+        await sendTemporaryNotice(token, kv, chatId, lockedText, restore);
         return jsonResponse({ ok: true });
       }
 
@@ -328,27 +428,36 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         openerName,
       });
 
-      const sent = await replacePersistentMessage(
+      const sent = await replacePersistentBotMessage(
+        token,
+        kv,
+        chatId,
         arenaWaitingText(openerName, null, arena.id),
         buildGroupArenaKeyboard(botUsername, arena.id, "Войти на арену (ПК)", miniApp),
       );
 
       await updateArenaMessageId(kv, arena.id, sent.message_id);
-      await tryDeleteSourceMessage();
       return jsonResponse({ ok: true });
     }
 
     if (command === "/battle" || text.startsWith("{")) {
       if (isGroupChat(message.chat)) {
-        await sendPersistentMessage(
-          "В группе используйте /start_tpd_arena. /battle — для личных сообщений с ботом.",
+        await sendPersistentBotMessage(
+          token,
+          kv,
+          chatId,
+          "В группе используйте кнопку «Создать арену». /battle — для личных сообщений с ботом.",
+          buildBotReplyKeyboard(),
         );
         return jsonResponse({ ok: true });
       }
 
       const battle = extractJsonFromMessage(text);
       const ownerUserId = message.from?.id ?? chatId;
-      const sent = await sendPersistentMessage(
+      const sent = await sendPersistentBotMessage(
+        token,
+        kv,
+        chatId,
         "Нажмите кнопку ниже. Бой отрисуется на вашем устройстве, затем видео придёт в этот чат.",
       );
       const sessionId = await createSessionId(chatId, battle, token, ownerUserId, sent.message_id);
@@ -365,7 +474,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Некорректный запрос.";
-    await sendPersistentMessage(messageText);
+    await sendPersistentBotMessage(token, kv, chatId, messageText);
     return jsonResponse({ ok: true });
   }
 

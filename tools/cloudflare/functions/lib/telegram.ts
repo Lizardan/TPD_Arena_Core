@@ -75,6 +75,21 @@ export async function deleteMessage(
   });
 }
 
+export async function deleteMessageQuiet(
+  token: string,
+  chatId: number,
+  messageId: number,
+): Promise<boolean> {
+  try {
+    await deleteMessage(token, chatId, messageId);
+    return true;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`deleteMessage failed (chat=${chatId}, message=${messageId}): ${detail}`);
+    return false;
+  }
+}
+
 export async function sendAnimation(
   token: string,
   chatId: number,
