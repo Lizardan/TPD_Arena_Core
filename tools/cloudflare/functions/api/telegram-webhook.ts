@@ -6,6 +6,7 @@ import {
   arenaWaitingText,
   buildGroupArenaKeyboard,
   buildWebAppKeyboard,
+  deleteMessage,
   editMessageText,
   resolveBotUsername,
   sendMessage,
@@ -26,6 +27,7 @@ interface TelegramChat {
 }
 
 interface TelegramMessage {
+  message_id: number;
   chat: TelegramChat;
   text?: string;
   from?: TelegramUser;
@@ -93,6 +95,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const chatId = message.chat.id;
   const text = message.text.trim();
   const command = commandName(text);
+  const sourceMessageId = message.message_id;
+
+  async function tryDeleteSourceMessage(): Promise<void> {
+    if (!sourceMessageId || sourceMessageId <= 0) return;
+    try {
+      await deleteMessage(token, chatId, sourceMessageId);
+    } catch {
+      // Ignore: bot might not have rights to delete user messages in some chats.
+    }
+  }
 
   try {
     if (command === "/start") {
@@ -124,6 +136,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const openerName = message.from ? displayName(message.from) : "Игрок";
       const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
+
+      await tryDeleteSourceMessage();
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (existing) {
@@ -167,6 +181,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       const battle = extractJsonFromMessage(text);
       const ownerUserId = message.from?.id ?? chatId;
+      await tryDeleteSourceMessage();
       const sent = await sendMessage(
         token,
         chatId,

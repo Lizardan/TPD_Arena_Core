@@ -92,6 +92,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
+    if (
+      currentArena.status === "fighting" &&
+      currentArena.player1 &&
+      currentArena.player2 &&
+      user.id !== currentArena.player1.id &&
+      user.id !== currentArena.player2.id
+    ) {
+      return errorResponse("Вы не успели зайти в бой. Ждите следующую арену.", 409);
+    }
+
     const result = await joinArena(
       kv,
       arenaId,
@@ -104,16 +114,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (result.justStarted && result.arena.player1 && result.arena.player2) {
       try {
+        const noMoreJoinText =
+          `${arenaFightingText(
+            result.arena.player1.displayName,
+            result.arena.player2.displayName,
+            result.arena.id,
+          )}\n\n` + "Набор закрыт. Если не успели — ждите следующую арену.";
         await editMessageText(
           token,
           result.arena.chatId,
           result.arena.messageId,
-          arenaFightingText(
-            result.arena.player1.displayName,
-            result.arena.player2.displayName,
-            result.arena.id,
-          ),
-          buildGroupArenaKeyboard(botUsername, result.arena.id, "Смотреть бой (ПК)", miniApp),
+          noMoreJoinText,
         );
       } catch (error) {
         console.warn("editMessageText (fighting) failed:", error);

@@ -165,7 +165,6 @@ body {
           throw new Error(body.detail || `Upload failed (${response.status})`);
         }
         if (tg) {
-          await sleep(800);
           tg.close();
         }
         return;
@@ -187,7 +186,34 @@ body {
     mimeType: "",
     winnerSide: 0,
     pausedByFocusLoss: false,
+    uploadOverlay: null,
   };
+
+  function showUploadOverlay() {
+    if (state.uploadOverlay) return;
+    const overlay = document.createElement("div");
+    overlay.id = "tpd-upload-overlay";
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "2147483647";
+    overlay.style.background = "rgba(10,12,20,0.94)";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    overlay.style.color = "#f2f5ff";
+    overlay.style.fontSize = "20px";
+    overlay.style.letterSpacing = "0.02em";
+    overlay.textContent = "Отправляем видео в чат...";
+    document.body.appendChild(overlay);
+    state.uploadOverlay = overlay;
+  }
+
+  function hideUploadOverlay() {
+    if (!state.uploadOverlay) return;
+    state.uploadOverlay.remove();
+    state.uploadOverlay = null;
+  }
 
   async function startRecording() {
     if (state.recording || state.uploadInFlight) return;
@@ -242,6 +268,7 @@ body {
         if (state.uploadInFlight) return;
 
         if (!state.chunks.length) {
+          hideUploadOverlay();
           return;
         }
 
@@ -250,7 +277,8 @@ body {
           const blob = new Blob(state.chunks, { type: state.mimeType });
           await uploadVideoBlob(blob, state.mimeType);
         } catch {
-          // keep silent in production; upload API returns user-visible status via bot
+          hideUploadOverlay();
+          notifyUser("Не удалось отправить видео. Попробуйте ещё раз.");
         } finally {
           state.uploadInFlight = false;
           state.chunks = [];
@@ -277,6 +305,7 @@ body {
     const parsed = Number(winnerSide);
     state.winnerSide = Number.isFinite(parsed) ? parsed : 0;
     state.pausedByFocusLoss = false;
+    showUploadOverlay();
     state.recording = false;
     if (state.recorder.state !== "inactive") {
       state.recorder.stop();
