@@ -109,38 +109,61 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       context.env.STATS_API_URL,
     );
 
+    let arenaForClient = result.arena;
+    if (arenaForClient.status === "waiting") {
+      const refreshed = await getArena(kv, arenaId);
+      if (
+        refreshed &&
+        refreshed.status === "fighting" &&
+        refreshed.player1 &&
+        refreshed.player2
+      ) {
+        arenaForClient = refreshed;
+      }
+    }
+
+    if (
+      arenaForClient.status === "fighting" &&
+      arenaForClient.player1 &&
+      arenaForClient.player2 &&
+      user.id !== arenaForClient.player1.id &&
+      user.id !== arenaForClient.player2.id
+    ) {
+      return errorResponse("Вы не успели зайти в бой. Ждите следующую арену.", 409);
+    }
+
     const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
     const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
 
-    if (result.justStarted && result.arena.player1 && result.arena.player2) {
+    if (arenaForClient.status === "fighting" && arenaForClient.player1 && arenaForClient.player2) {
       try {
         const noMoreJoinText =
           `${arenaFightingText(
-            result.arena.player1.displayName,
-            result.arena.player2.displayName,
-            result.arena.id,
+            arenaForClient.player1.displayName,
+            arenaForClient.player2.displayName,
+            arenaForClient.id,
           )}\n\n` + "Набор закрыт. Если не успели — ждите следующую арену.";
         await editMessageText(
           token,
-          result.arena.chatId,
-          result.arena.messageId,
+          arenaForClient.chatId,
+          arenaForClient.messageId,
           noMoreJoinText,
         );
       } catch (error) {
         console.warn("editMessageText (fighting) failed:", error);
       }
     } else if (
-      result.arena.status === "waiting" &&
-      result.arena.player1 &&
-      !result.arena.player2
+      arenaForClient.status === "waiting" &&
+      arenaForClient.player1 &&
+      !arenaForClient.player2
     ) {
       try {
         await editMessageText(
           token,
-          result.arena.chatId,
-          result.arena.messageId,
-          arenaWaitingText(result.arena.openerName, result.arena.player1, result.arena.id),
-          buildGroupArenaKeyboard(botUsername, result.arena.id, "Войти на арену (ПК)", miniApp),
+          arenaForClient.chatId,
+          arenaForClient.messageId,
+          arenaWaitingText(arenaForClient.openerName, arenaForClient.player1, arenaForClient.id),
+          buildGroupArenaKeyboard(botUsername, arenaForClient.id, "Войти на арену (ПК)", miniApp),
         );
       } catch (error) {
         console.warn("editMessageText (waiting) failed:", error);
@@ -148,12 +171,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     return jsonResponse({
-      ...arenaToPublicJson(result.arena, user.id),
-      justStarted: result.justStarted,
+      ...arenaToPublicJson(arenaForClient, user.id),
+      justStarted:
+        result.justStarted ||
+        (result.arena.status === "waiting" && arenaForClient.status === "fighting"),
       needSecondPlayer:
-        result.arena.status === "waiting" &&
-        result.arena.player1?.id === user.id &&
-        !result.arena.player2,
+        arenaForClient.status === "waiting" &&
+        arenaForClient.player1?.id === user.id &&
+        !arenaForClient.player2,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Не удалось войти на арену.";
