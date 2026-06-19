@@ -73,6 +73,8 @@ namespace TPD.Arena
         private Coroutine playbackCoroutine;
 
         private BattlePlaybackMode playbackMode = BattlePlaybackMode.Runtime;
+        private bool miniAppPausedByFocusLoss;
+        private float prePauseTimeScale = 1f;
 
 
 
@@ -255,6 +257,51 @@ namespace TPD.Arena
             SetExportStatus(string.Empty);
             UpdateNamesLabel();
 
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            HandleMiniAppFocus(hasFocus);
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            HandleMiniAppFocus(!pauseStatus);
+        }
+
+        private void HandleMiniAppFocus(bool hasFocus)
+        {
+            if (!miniAppPlayback || !isPlaying)
+                return;
+
+            if (hasFocus)
+            {
+                ResumeMiniAppPlaybackAfterFocusLoss();
+                return;
+            }
+
+            PauseMiniAppPlaybackOnFocusLoss();
+        }
+
+        private void PauseMiniAppPlaybackOnFocusLoss()
+        {
+            if (miniAppPausedByFocusLoss)
+                return;
+
+            prePauseTimeScale = Mathf.Approximately(Time.timeScale, 0f) ? 1f : Time.timeScale;
+            Time.timeScale = 0f;
+            AudioListener.pause = true;
+            miniAppPausedByFocusLoss = true;
+        }
+
+        private void ResumeMiniAppPlaybackAfterFocusLoss()
+        {
+            if (!miniAppPausedByFocusLoss)
+                return;
+
+            Time.timeScale = prePauseTimeScale <= 0f ? 1f : prePauseTimeScale;
+            AudioListener.pause = false;
+            miniAppPausedByFocusLoss = false;
         }
 
 
@@ -737,6 +784,7 @@ namespace TPD.Arena
         {
 
             isPlaying = false;
+            ResumeMiniAppPlaybackAfterFocusLoss();
 
             startBattleButton.interactable = true;
 

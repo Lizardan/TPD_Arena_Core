@@ -186,6 +186,7 @@ body {
     chunks: [],
     mimeType: "",
     winnerSide: 0,
+    pausedByFocusLoss: false,
   };
 
   async function startRecording() {
@@ -207,6 +208,7 @@ body {
 
     try {
       state.winnerSide = 0;
+      state.pausedByFocusLoss = false;
       // Keep actual rendered frame deterministic for upload output.
       if (canvas.width !== TARGET_WIDTH || canvas.height !== TARGET_HEIGHT) {
         canvas.width = TARGET_WIDTH;
@@ -252,6 +254,7 @@ body {
         } finally {
           state.uploadInFlight = false;
           state.chunks = [];
+          state.pausedByFocusLoss = false;
           if (state.stream) {
             for (const track of state.stream.getTracks()) {
               track.stop();
@@ -273,9 +276,34 @@ body {
     if (!state.recording || !state.recorder) return;
     const parsed = Number(winnerSide);
     state.winnerSide = Number.isFinite(parsed) ? parsed : 0;
+    state.pausedByFocusLoss = false;
     state.recording = false;
     if (state.recorder.state !== "inactive") {
       state.recorder.stop();
+    }
+  }
+
+  function setRecorderFocusState(hasFocus) {
+    if (!state.recording || !state.recorder) return;
+    try {
+      if (!hasFocus) {
+        if (state.recorder.state === "recording" && typeof state.recorder.pause === "function") {
+          state.recorder.pause();
+          state.pausedByFocusLoss = true;
+        }
+        return;
+      }
+
+      if (
+        state.pausedByFocusLoss &&
+        state.recorder.state === "paused" &&
+        typeof state.recorder.resume === "function"
+      ) {
+        state.recorder.resume();
+      }
+      state.pausedByFocusLoss = false;
+    } catch {
+      // focus transition can fail on some WebView implementations
     }
   }
 
@@ -283,6 +311,12 @@ body {
     onBattleStarted: startRecording,
     onBattleFinished: stopRecording,
   };
+
+  document.addEventListener("visibilitychange", () => {
+    setRecorderFocusState(!document.hidden);
+  });
+  window.addEventListener("blur", () => setRecorderFocusState(false));
+  window.addEventListener("focus", () => setRecorderFocusState(true));
 
   ensureTargetGameFrame();
   window.addEventListener("resize", ensureTargetGameFrame);
