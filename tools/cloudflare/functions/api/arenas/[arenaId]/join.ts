@@ -106,7 +106,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       kv,
       arenaId,
       { id: user.id, displayName: displayNameFromUser(user) },
-      context.env.STATS_API_URL,
     );
 
     let arenaForClient = result.arena;

@@ -1,5 +1,4 @@
 import type { BattlePayload } from "./validation";
-import { fetchPlayerStats } from "./stats-api";
 
 export type ArenaStatus = "waiting" | "fighting" | "done" | "expired";
 
@@ -30,6 +29,8 @@ const ARENA_TTL_SEC = 30 * 60;
 const KV_PREFIX = "arena:";
 const CHAT_ACTIVE_PREFIX = "chat-active:";
 const MAX_JOIN_RETRIES = 5;
+const BATTLE_HP_MIN = 30;
+const BATTLE_HP_MAX = 100;
 
 export function arenaKey(id: string): string {
   return `${KV_PREFIX}${id}`;
@@ -68,6 +69,17 @@ export async function clearActiveArenaForChat(kv: KVNamespace, chatId: number): 
 
 function newArenaId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+
+function randomHpValue(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function generateMockBattlePayload(): BattlePayload {
+  return {
+    leftHp: randomHpValue(BATTLE_HP_MIN, BATTLE_HP_MAX),
+    rightHp: randomHpValue(BATTLE_HP_MIN, BATTLE_HP_MAX),
+  };
 }
 
 export async function createArena(
@@ -141,7 +153,6 @@ export async function joinArena(
   kv: KVNamespace,
   arenaId: string,
   player: ArenaPlayer,
-  statsApiUrl?: string,
 ): Promise<JoinArenaResult> {
   for (let attempt = 0; attempt < MAX_JOIN_RETRIES; attempt++) {
     const arena = await getArena(kv, arenaId);
@@ -180,6 +191,8 @@ export async function joinArena(
     if (!arena.player1) {
       arena.player1 = player;
       arena.hostUserId = player.id;
+      // Temporary API emulation: host generates HP once for this arena.
+      arena.battle = generateMockBattlePayload();
       await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
         expirationTtl: ARENA_TTL_SEC,
       });
@@ -196,7 +209,6 @@ export async function joinArena(
     } else if (!arena.player2 && arena.player1.id !== player.id) {
       arena.player2 = player;
       arena.status = "fighting";
-      arena.battle = { leftHp: 100, rightHp: 100 };
 
       await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
         expirationTtl: ARENA_TTL_SEC,
@@ -206,19 +218,22 @@ export async function joinArena(
         continue;
       }
 
-      persisted.battle = await fetchPlayerStats(
-        persisted.player1?.displayName || "Игрок 1",
-        player.displayName,
-        statsApiUrl,
-      );
-      await kv.put(arenaKey(persisted.id), JSON.stringify(persisted), {
-        expirationTtl: ARENA_TTL_SEC,
-      });
-      const withStats = (await getArena(kv, persisted.id)) ?? persisted;
+      const hasValidBattleHp =
+        Number.isInteger(persisted.battle?.leftHp) &&
+        Number.isInteger(persisted.battle?.rightHp);
+      if (!hasValidBattleHp) {
+        // Fallback safety: if battle payload was lost, generate once here.
+        persisted.battle = generateMockBattlePayload();
+        await kv.put(arenaKey(persisted.id), JSON.stringify(persisted), {
+          expirationTtl: ARENA_TTL_SEC,
+        });
+      }
+
+      const withBattle = (await getArena(kv, persisted.id)) ?? persisted;
       return {
-        arena: withStats,
-        role: roleForUser(withStats, player.id),
-        isHost: withStats.hostUserId === player.id,
+        arena: withBattle,
+        role: roleForUser(withBattle, player.id),
+        isHost: withBattle.hostUserId === player.id,
         justStarted: true,
       };
     } else {
