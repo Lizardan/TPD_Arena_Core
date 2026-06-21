@@ -41,6 +41,10 @@ await callTelegram("setMyCommands", {
       description: "Открыть арену в групповом чате",
     },
     {
+      command: "start_tpd_bot",
+      description: "Арена против бота в группе",
+    },
+    {
       command: "stop_tpd_arena",
       description: "Остановить текущую арену",
     },

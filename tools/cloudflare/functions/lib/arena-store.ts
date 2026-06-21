@@ -1,5 +1,7 @@
 import type { BattlePayload } from "./validation";
 
+export type ArenaMode = "pvp" | "pve";
+
 export type ArenaStatus = "waiting" | "fighting" | "uploading" | "done" | "expired";
 
 export type ArenaRole = "host" | "player1" | "player2" | "spectator";
@@ -13,6 +15,7 @@ export interface ArenaRecord {
   id: string;
   chatId: number;
   messageId: number;
+  mode: ArenaMode;
   status: ArenaStatus;
   hostUserId: number | null;
   openerName: string;
@@ -31,6 +34,8 @@ const CHAT_ACTIVE_PREFIX = "chat-active:";
 const JOIN_CLAIM_PREFIX = "arena-join:";
 const BATTLE_HP_MIN = 30;
 const BATTLE_HP_MAX = 100;
+export const BOT_PLAYER_ID = 1;
+export const BOT_DISPLAY_NAME = "БОТ";
 
 interface ArenaJoinClaim extends ArenaPlayer {
   joinedAt: number;
@@ -92,6 +97,17 @@ function randomHpValue(min: number, max: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function botPlayer(): ArenaPlayer {
+  return { id: BOT_PLAYER_ID, displayName: BOT_DISPLAY_NAME };
+}
+
+function normalizeArena(arena: ArenaRecord): ArenaRecord {
+  if (!arena.mode) {
+    arena.mode = "pvp";
+  }
+  return arena;
 }
 
 function generateMockBattlePayload(): BattlePayload {
@@ -264,6 +280,75 @@ export async function createArenaIfNoneActive(
   }
 }
 
+/** Single-player arena vs BOT — fighting starts immediately for the host. */
+export async function createArenaPveIfNoneActive(
+  kv: KVNamespace,
+  params: {
+    chatId: number;
+    messageId: number;
+    openerName: string;
+    host: ArenaPlayer;
+  },
+): Promise<CreateArenaResult> {
+  const existing = await getActiveArenaForChat(kv, params.chatId);
+  if (existing) {
+    return { existing };
+  }
+
+  const reserved = await putKvIfAbsent(kv, chatActiveKey(params.chatId), "__creating__", 120);
+  if (!reserved) {
+    const raced = await getActiveArenaForChat(kv, params.chatId);
+    if (raced) {
+      return { existing: raced };
+    }
+    throw new Error("Не удалось зарезервировать арену. Попробуйте снова.");
+  }
+
+  try {
+    const created = await createArenaPve(kv, params);
+    return { created };
+  } catch (error) {
+    await kv.delete(chatActiveKey(params.chatId));
+    throw error;
+  }
+}
+
+export async function createArenaPve(
+  kv: KVNamespace,
+  params: {
+    chatId: number;
+    messageId: number;
+    openerName: string;
+    host: ArenaPlayer;
+  },
+): Promise<ArenaRecord> {
+  const now = Date.now();
+  const battle = generateMockBattlePayload();
+  const arena: ArenaRecord = {
+    id: newArenaId(),
+    chatId: params.chatId,
+    messageId: params.messageId,
+    mode: "pve",
+    status: "fighting",
+    hostUserId: params.host.id,
+    openerName: params.openerName,
+    player1: { id: params.host.id, displayName: params.host.displayName },
+    player2: botPlayer(),
+    spectatorIds: [],
+    battle,
+    battleStartAt: now,
+    createdAt: now,
+    exp: now + ARENA_TTL_SEC * 1000,
+  };
+
+  await kv.put(arenaKey(arena.id), JSON.stringify(arena), {
+    expirationTtl: ARENA_TTL_SEC,
+  });
+  await setActiveArenaForChat(kv, params.chatId, arena.id);
+
+  return arena;
+}
+
 export async function createArena(
   kv: KVNamespace,
   params: {
@@ -277,6 +362,7 @@ export async function createArena(
     id: newArenaId(),
     chatId: params.chatId,
     messageId: params.messageId,
+    mode: "pvp",
     status: "waiting",
     hostUserId: null,
     openerName: params.openerName,
@@ -301,7 +387,7 @@ export async function getArena(kv: KVNamespace, id: string): Promise<ArenaRecord
   const raw = await kv.get(arenaKey(id));
   if (!raw) return null;
 
-  const arena = JSON.parse(raw) as ArenaRecord;
+  const arena = normalizeArena(JSON.parse(raw) as ArenaRecord);
   if (arena.exp < Date.now() && arena.status !== "done") {
     arena.status = "expired";
   }
@@ -345,6 +431,21 @@ export async function joinArena(
   }
   if (arena.status === "uploading") {
     throw new Error("Бой завершается. Дождитесь видео в чате.");
+  }
+
+  if (arena.mode === "pve") {
+    if (!arena.player1) {
+      throw new Error("Арена с ботом настроена некорректно.");
+    }
+    if (player.id !== arena.player1.id) {
+      throw new Error(`Бой с ботом доступен только ${arena.player1.displayName}.`);
+    }
+    return {
+      arena,
+      role: "player1",
+      isHost: true,
+      justStarted: false,
+    };
   }
 
   const alreadyInFightingArena =
@@ -433,15 +534,17 @@ export async function updateArenaMessageId(
 }
 
 export function arenaToPublicJson(arena: ArenaRecord, userId?: number) {
+  const normalized = normalizeArena(arena);
   return {
-    id: arena.id,
-    status: arena.status,
-    openerName: arena.openerName,
-    player1: arena.player1,
-    player2: arena.player2,
-    battle: arena.battle,
-    battleStartAt: arena.battleStartAt,
-    isHost: userId != null && arena.hostUserId === userId,
-    role: userId != null ? roleForUser(arena, userId) : null,
+    id: normalized.id,
+    mode: normalized.mode,
+    status: normalized.status,
+    openerName: normalized.openerName,
+    player1: normalized.player1,
+    player2: normalized.player2,
+    battle: normalized.battle,
+    battleStartAt: normalized.battleStartAt,
+    isHost: userId != null && normalized.hostUserId === userId,
+    role: userId != null ? roleForUser(normalized, userId) : null,
   };
 }

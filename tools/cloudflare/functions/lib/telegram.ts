@@ -161,8 +161,13 @@ export function buildBotReplyKeyboard() {
     keyboard: [
       [
         {
-          text: "Создать арену",
+          text: "Арена против игрока",
         },
+        {
+          text: "Арена против бота",
+        },
+      ],
+      [
         {
           text: "Остановить арену",
         },
@@ -266,6 +271,37 @@ export function arenaFightingText(
 ): string {
   const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
   return `Сражаются: ${player1Name} против ${player2Name}${codeLine}`;
+}
+
+export function arenaPveOpenText(
+  playerName: string,
+  leftHp: number,
+  rightHp: number,
+  arenaId?: string,
+): string {
+  const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
+  const desktopOnly = `\n\nАрена доступна только с ПК: Telegram Desktop или web.telegram.org.`;
+  return (
+    `${playerName} против БОТ${codeLine}\n` +
+    `HP: ${leftHp} — ${rightHp}\n\n` +
+    `Нажмите кнопку ниже, чтобы начать бой на ПК.\n` +
+    `Видео боя появится в этом чате.` +
+    desktopOnly
+  );
+}
+
+export function arenaPveFightingText(
+  playerName: string,
+  leftHp: number,
+  rightHp: number,
+  arenaId?: string,
+): string {
+  const codeLine = arenaId ? `\nКод арены: ${arenaId}` : "";
+  return (
+    `${playerName} против БОТ${codeLine}\n` +
+    `HP: ${leftHp} — ${rightHp}\n\n` +
+    `Бой идёт на ПК ${playerName}. Видео появится в чате.`
+  );
 }
 
 export function arenaAlreadyOpenText(arena: {

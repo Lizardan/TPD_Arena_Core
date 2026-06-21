@@ -3,6 +3,7 @@ import { errorResponse, jsonResponse } from "../../../lib/env";
 import { arenaToPublicJson, getActiveArenaForChat, getArena, joinArena } from "../../../lib/arena-store";
 import {
   arenaFightingText,
+  arenaPveFightingText,
   arenaWaitingText,
   buildGroupArenaKeyboard,
   editMessageText,
@@ -92,7 +93,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
+    if (currentArena.mode === "pve" && user.id !== currentArena.player1?.id) {
+      const hostName = currentArena.player1?.displayName || "инициатор";
+      return errorResponse(`Бой с ботом доступен только ${hostName}.`, 403);
+    }
+
     if (
+      currentArena.mode !== "pve" &&
       currentArena.status === "fighting" &&
       currentArena.player1 &&
       currentArena.player2 &&
@@ -122,6 +129,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
 
     if (
+      arenaForClient.mode !== "pve" &&
       arenaForClient.status === "fighting" &&
       arenaForClient.player1 &&
       arenaForClient.player2 &&
@@ -137,11 +145,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (arenaForClient.status === "fighting" && arenaForClient.player1 && arenaForClient.player2) {
       try {
         const noMoreJoinText =
-          `${arenaFightingText(
-            arenaForClient.player1.displayName,
-            arenaForClient.player2.displayName,
-            arenaForClient.id,
-          )}\n\n` + "Набор закрыт. Если не успели — ждите следующую арену.";
+          arenaForClient.mode === "pve"
+            ? arenaPveFightingText(
+                arenaForClient.player1.displayName,
+                arenaForClient.battle.leftHp,
+                arenaForClient.battle.rightHp,
+                arenaForClient.id,
+              )
+            : `${arenaFightingText(
+                arenaForClient.player1.displayName,
+                arenaForClient.player2.displayName,
+                arenaForClient.id,
+              )}\n\n` + "Набор закрыт. Если не успели — ждите следующую арену.";
         await editMessageText(
           token,
           arenaForClient.chatId,

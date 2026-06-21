@@ -51,6 +51,12 @@ function isDesktopTelegramPlatform() {
 }
 
 function roleStatusText(arena) {
+  if (arena.mode === "pve") {
+    if (arena.status === "fighting" && arena.isHost) {
+      return "Бой с ботом";
+    }
+    return "Арена с ботом";
+  }
   if (arena.status === "waiting") {
     if (arena.role === "player1") {
       return "Вы — левый боец";
@@ -168,7 +174,7 @@ async function runArenaLobby(id) {
   }
 
   if (arena.status === "fighting" && arena.battle) {
-    setStatus("Оба бойца на месте!");
+    setStatus(arena.mode === "pve" ? "Бой с ботом!" : "Оба бойца на месте!");
     setDetail(fightingDetail(arena));
     await sleep(400);
     const leftName = arena.player1?.displayName || "Левый";
