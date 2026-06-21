@@ -1239,7 +1239,7 @@ MonoBehaviour:
   skinPrefabs:
   - {fileID: 8029788638776093327, guid: 2bd68295a2a219340bdd7fd445b02922, type: 3}
   - {fileID: 4119735188396209200, guid: c5c08a50ae4f198478c4698d6e1e1f7b, type: 3}
-  skinIndex: 1
+  skinIndex: 0
   yRotation: 90
   animator: {fileID: 0}
 --- !u!114 &366612336
@@ -1317,7 +1317,7 @@ MonoBehaviour:
   skinPrefabs:
   - {fileID: 8029788638776093327, guid: 2bd68295a2a219340bdd7fd445b02922, type: 3}
   - {fileID: 4119735188396209200, guid: c5c08a50ae4f198478c4698d6e1e1f7b, type: 3}
-  skinIndex: 0
+  skinIndex: 1
   yRotation: -90
   animator: {fileID: 0}
 --- !u!114 &385758902

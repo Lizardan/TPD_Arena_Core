@@ -1,7 +1,7 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
 import { arenaKey, getArena, markArenaDone, tryBeginArenaVideoUpload } from "../../../lib/arena-store";
-import { getLastBotMessageId, setLastBotMessageId } from "../../../lib/chat-message-store";
+import { clearLastBotMessageId, getLastBotMessageId } from "../../../lib/chat-message-store";
 import {
   arenaAnimationCaption,
   battleWinnerCaption,
@@ -92,7 +92,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   try {
     const previousMessageId = await getLastBotMessageId(kv, lockedArena.chatId);
     const sent = await sendAnimation(token, lockedArena.chatId, file, caption, filename);
-    await setLastBotMessageId(kv, lockedArena.chatId, sent.message_id);
+    // Video stays in chat history — do not track it for later replace/delete.
+    await clearLastBotMessageId(kv, lockedArena.chatId);
 
     const staleMessageIds = new Set<number>();
     if (previousMessageId && previousMessageId !== sent.message_id) {
