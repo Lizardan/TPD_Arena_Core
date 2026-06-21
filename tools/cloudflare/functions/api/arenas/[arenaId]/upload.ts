@@ -1,6 +1,6 @@
 import type { Env } from "../../../lib/env";
 import { errorResponse, jsonResponse } from "../../../lib/env";
-import { getArena, markArenaDone } from "../../../lib/arena-store";
+import { arenaKey, getArena, markArenaDone, tryBeginArenaVideoUpload } from "../../../lib/arena-store";
 import { getLastBotMessageId, setLastBotMessageId } from "../../../lib/chat-message-store";
 import {
   arenaAnimationCaption,
@@ -43,8 +43,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Только хост арены может загрузить видео.", 403);
   }
 
-  if (arena.status !== "fighting" && arena.status !== "done") {
+  if (arena.status === "done" || arena.status === "uploading") {
+    return errorResponse("Видео уже отправлено или загружается.", 409);
+  }
+
+  if (arena.status !== "fighting") {
     return errorResponse("Бой ещё не начался.", 400);
+  }
+
+  const lockedArena = await tryBeginArenaVideoUpload(kv, arenaId, user.id);
+  if (!lockedArena) {
+    return errorResponse("Видео уже отправлено или загружается.", 409);
   }
 
   const contentType = context.request.headers.get("content-type") || "";
@@ -73,33 +82,42 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Для автопроигрывания поддерживается только MP4 (H264).", 415);
   }
   const filename = `arena-${arenaId}.mp4`;
-  const p1 = arena.player1?.displayName || "Игрок 1";
-  const p2 = arena.player2?.displayName || "Игрок 2";
+  const p1 = lockedArena.player1?.displayName || "Игрок 1";
+  const p2 = lockedArena.player2?.displayName || "Игрок 2";
   const winnerCaption = battleWinnerCaption(p1, p2, winnerSide);
   const caption =
-    winnerCaption ?? arenaAnimationCaption(p1, p2, arena.battle.leftHp, arena.battle.rightHp);
+    winnerCaption ??
+    arenaAnimationCaption(p1, p2, lockedArena.battle.leftHp, lockedArena.battle.rightHp);
 
   try {
-    const previousMessageId = await getLastBotMessageId(kv, arena.chatId);
-    const sent = await sendAnimation(token, arena.chatId, file, caption, filename);
-    await setLastBotMessageId(kv, arena.chatId, sent.message_id);
+    const previousMessageId = await getLastBotMessageId(kv, lockedArena.chatId);
+    const sent = await sendAnimation(token, lockedArena.chatId, file, caption, filename);
+    await setLastBotMessageId(kv, lockedArena.chatId, sent.message_id);
 
     const staleMessageIds = new Set<number>();
     if (previousMessageId && previousMessageId !== sent.message_id) {
       staleMessageIds.add(previousMessageId);
     }
-    if (arena.messageId > 0 && arena.messageId !== sent.message_id) {
-      staleMessageIds.add(arena.messageId);
+    if (lockedArena.messageId > 0 && lockedArena.messageId !== sent.message_id) {
+      staleMessageIds.add(lockedArena.messageId);
     }
     for (const staleMessageId of staleMessageIds) {
       try {
-        await deleteMessage(token, arena.chatId, staleMessageId);
+        await deleteMessage(token, lockedArena.chatId, staleMessageId);
       } catch (error) {
         console.warn("deleteMessage (arena stale message) failed:", error);
       }
     }
     await markArenaDone(kv, arenaId);
   } catch (error) {
+    try {
+      await kv.put(arenaKey(arenaId), JSON.stringify({ ...lockedArena, status: "fighting" }), {
+        expirationTtl: 30 * 60,
+      });
+      await kv.delete(`arena-upload:${arenaId}`);
+    } catch (rollbackError) {
+      console.warn("arena upload rollback failed:", rollbackError);
+    }
     const message = error instanceof Error ? error.message : "Failed to send video.";
     return errorResponse(message, 502);
   }

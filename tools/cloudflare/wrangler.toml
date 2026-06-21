@@ -1,5 +1,5 @@
 name = "tpd-arena"
-compatibility_date = "2024-11-01"
+compatibility_date = "2025-06-01"
 pages_build_output_dir = "public"
 
 [vars]

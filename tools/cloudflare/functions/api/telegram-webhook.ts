@@ -1,7 +1,8 @@
 import type { Env } from "../lib/env";
 import { errorResponse, jsonResponse } from "../lib/env";
-import { createArena, getActiveArenaForChat, markArenaDone, updateArenaMessageId } from "../lib/arena-store";
+import { createArenaIfNoneActive, getActiveArenaForChat, markArenaDone, updateArenaMessageId } from "../lib/arena-store";
 import { getLastBotMessageId, setLastBotMessageId } from "../lib/chat-message-store";
+import { isDuplicateTelegramUpdate } from "../lib/update-dedup";
 import {
   answerCallbackQuery,
   arenaFightingText,
@@ -38,6 +39,7 @@ interface TelegramMessage {
 }
 
 interface TelegramUpdate {
+  update_id?: number;
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
   my_chat_member?: TelegramChatMemberUpdated;
@@ -199,8 +201,28 @@ function mapReplyKeyboardText(rawText: string): string | null {
   return null;
 }
 
+function scheduleBackground(context: EventContext<Env, string, unknown>, task: Promise<unknown>): void {
+  context.waitUntil(
+    task.catch((error) => {
+      console.error("telegram webhook background task failed:", error);
+    }),
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function respondTemporaryNotice(
+  context: EventContext<Env, string, unknown>,
+  token: string,
+  kv: KVNamespace | undefined,
+  chatId: number,
+  noticeText: string,
+  restore?: BotMessageRestore,
+): Response {
+  scheduleBackground(context, sendTemporaryNotice(token, kv, chatId, noticeText, restore));
+  return jsonResponse({ ok: true });
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -238,6 +260,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse("Invalid Telegram update.", 400);
   }
 
+  const kv = context.env.ARENA_KV;
+  if (await isDuplicateTelegramUpdate(kv, update.update_id)) {
+    return jsonResponse({ ok: true });
+  }
+
   const myChatMember = update.my_chat_member;
   const botJoinedGroup =
     myChatMember &&
@@ -273,7 +300,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const command = commandName(text);
   const sourceMessageId = update.message?.message_id ?? 0;
   const actor = update.message?.from ?? callback?.from;
-  const kv = context.env.ARENA_KV;
 
   async function tryDeleteUserMessage(): Promise<boolean> {
     if (!sourceMessageId || sourceMessageId <= 0) return false;
@@ -312,35 +338,35 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (command === "/stop_tpd_arena") {
       if (!isGroupChat(message.chat)) {
-        await sendTemporaryNotice(
+        return respondTemporaryNotice(
+          context,
           token,
           kv,
           chatId,
           "Команда остановки арены работает в групповом чате.",
         );
-        return jsonResponse({ ok: true });
       }
 
       if (!kv) {
-        await sendTemporaryNotice(
+        return respondTemporaryNotice(
+          context,
           token,
           kv,
           chatId,
           "Арена временно недоступна (KV не настроен).",
         );
-        return jsonResponse({ ok: true });
       }
 
       const existing = await getActiveArenaForChat(kv, chatId);
       if (!existing) {
-        await sendTemporaryNotice(
+        return respondTemporaryNotice(
+          context,
           token,
           kv,
           chatId,
           "Активной арены сейчас нет.",
           setupRestore,
         );
-        return jsonResponse({ ok: true });
       }
 
       await markArenaDone(kv, existing.id);
@@ -381,8 +407,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const botUsername = await resolveBotUsername(token, context.env.TELEGRAM_BOT_USERNAME);
       const miniApp = context.env.TELEGRAM_MINI_APP_SHORT_NAME;
 
-      const existing = await getActiveArenaForChat(kv, chatId);
-      if (existing) {
+      const createResult = await createArenaIfNoneActive(kv, {
+        chatId,
+        messageId: 0,
+        openerName,
+      });
+
+      if ("existing" in createResult) {
+        const existing = createResult.existing;
         const lockedText =
           existing.status === "fighting"
             ? "Сейчас уже идёт бой. Новая арена будет доступна после отправки видео в чат."
@@ -418,15 +450,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             ),
           };
         }
-        await sendTemporaryNotice(token, kv, chatId, lockedText, restore);
-        return jsonResponse({ ok: true });
+        return respondTemporaryNotice(context, token, kv, chatId, lockedText, restore);
       }
 
-      const arena = await createArena(kv, {
-        chatId,
-        messageId: 0,
-        openerName,
-      });
+      const arena = createResult.created;
 
       const sent = await replacePersistentBotMessage(
         token,

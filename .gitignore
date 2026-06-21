@@ -84,6 +84,7 @@ crashlytics-build.properties
 .env.*
 !.env.example
 tools/cloudflare/node_modules/
+tools/cloudflare/_worker.bundle
 tools/cloudflare/public/*
 !tools/cloudflare/public/.gitkeep
 tools/web-app/dist/

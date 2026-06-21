@@ -1,6 +1,6 @@
 import type { BattlePayload } from "./validation";
 
-export type ArenaStatus = "waiting" | "fighting" | "done" | "expired";
+export type ArenaStatus = "waiting" | "fighting" | "uploading" | "done" | "expired";
 
 export type ArenaRole = "host" | "player1" | "player2" | "spectator";
 
@@ -58,6 +58,9 @@ export async function getActiveArenaForChat(
 ): Promise<ArenaRecord | null> {
   const arenaId = await kv.get(chatActiveKey(chatId));
   if (!arenaId) return null;
+  if (arenaId === "__creating__") {
+    return null;
+  }
 
   const arena = await getArena(kv, arenaId);
   if (!arena || arena.status === "done" || arena.status === "expired") {
@@ -184,6 +187,7 @@ async function reconcileArenaPlayersFromClaims(
   const player2 = claims[1] ? { id: claims[1].id, displayName: claims[1].displayName } : null;
   const status: ArenaStatus = player1 && player2 ? "fighting" : "waiting";
   const hostUserId = player1?.id ?? null;
+  const fightJustStarted = status === "fighting" && arena.status !== "fighting";
   const next: ArenaRecord = {
     ...arena,
     player1,
@@ -191,6 +195,7 @@ async function reconcileArenaPlayersFromClaims(
     hostUserId,
     status,
     battle: arena.battle ?? generateMockBattlePayload(),
+    battleStartAt: fightJustStarted ? Date.now() : arena.battleStartAt,
   };
 
   if (
@@ -204,6 +209,59 @@ async function reconcileArenaPlayersFromClaims(
 
   await kv.put(arenaKey(next.id), JSON.stringify(next), { expirationTtl: ARENA_TTL_SEC });
   return (await getArena(kv, next.id)) ?? next;
+}
+
+async function putKvIfAbsent(
+  kv: KVNamespace,
+  key: string,
+  value: string,
+  expirationTtl: number,
+): Promise<boolean> {
+  try {
+    await kv.put(key, value, {
+      expirationTtl,
+      onlyIfAbsent: true,
+    } as KVNamespacePutOptions);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type CreateArenaResult =
+  | { created: ArenaRecord }
+  | { existing: ArenaRecord };
+
+/** Reserves the chat slot atomically so concurrent /start_tpd_arena cannot spawn two arenas. */
+export async function createArenaIfNoneActive(
+  kv: KVNamespace,
+  params: {
+    chatId: number;
+    messageId: number;
+    openerName: string;
+  },
+): Promise<CreateArenaResult> {
+  const existing = await getActiveArenaForChat(kv, params.chatId);
+  if (existing) {
+    return { existing };
+  }
+
+  const reserved = await putKvIfAbsent(kv, chatActiveKey(params.chatId), "__creating__", 120);
+  if (!reserved) {
+    const raced = await getActiveArenaForChat(kv, params.chatId);
+    if (raced) {
+      return { existing: raced };
+    }
+    throw new Error("Не удалось зарезервировать арену. Попробуйте снова.");
+  }
+
+  try {
+    const created = await createArena(kv, params);
+    return { created };
+  } catch (error) {
+    await kv.delete(chatActiveKey(params.chatId));
+    throw error;
+  }
 }
 
 export async function createArena(
@@ -285,6 +343,9 @@ export async function joinArena(
   if (arena.status === "expired" || arena.status === "done") {
     throw new Error("Эта арена уже завершена.");
   }
+  if (arena.status === "uploading") {
+    throw new Error("Бой завершается. Дождитесь видео в чате.");
+  }
 
   const alreadyInFightingArena =
     arena.status === "fighting" &&
@@ -318,6 +379,29 @@ export async function joinArena(
     isHost: reconciled.hostUserId === player.id,
     justStarted: arena.status !== "fighting" && reconciled.status === "fighting",
   };
+}
+
+export async function tryBeginArenaVideoUpload(
+  kv: KVNamespace,
+  arenaId: string,
+  hostUserId: number,
+): Promise<ArenaRecord | null> {
+  const arena = await getArena(kv, arenaId);
+  if (!arena || arena.status !== "fighting" || arena.hostUserId !== hostUserId) {
+    return null;
+  }
+
+  const lockKey = `arena-upload:${arenaId}`;
+  const locked = await putKvIfAbsent(kv, lockKey, "1", 600);
+  if (!locked) {
+    return null;
+  }
+
+  const uploading: ArenaRecord = { ...arena, status: "uploading" };
+  await kv.put(arenaKey(arenaId), JSON.stringify(uploading), {
+    expirationTtl: ARENA_TTL_SEC,
+  });
+  return uploading;
 }
 
 export async function markArenaDone(kv: KVNamespace, arenaId: string): Promise<ArenaRecord | null> {

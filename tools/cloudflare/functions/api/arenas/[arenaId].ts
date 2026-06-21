@@ -28,8 +28,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const user = initData
     ? await verifyWebAppInitData(initData, token.trim().replace(/\r/g, ""))
     : null;
+  if (!user) {
+    return errorResponse("Недействительные data Telegram.", 401);
+  }
 
-  return jsonResponse(arenaToPublicJson(arena, user?.id), 200, {
+  return jsonResponse(arenaToPublicJson(arena, user.id), 200, {
     "Cache-Control": "no-store",
   });
 };

@@ -18,9 +18,14 @@ async function callTelegram<T>(
   }
 
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, init);
-  const payload = (await response.json()) as TelegramResponse<T>;
-  if (!payload.ok) {
-    throw new Error(payload.description || `Telegram ${method} failed`);
+  let payload: TelegramResponse<T>;
+  try {
+    payload = (await response.json()) as TelegramResponse<T>;
+  } catch {
+    throw new Error(`Telegram ${method} returned non-JSON (HTTP ${response.status})`);
+  }
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.description || `Telegram ${method} failed (HTTP ${response.status})`);
   }
   return payload.result as T;
 }

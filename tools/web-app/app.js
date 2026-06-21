@@ -36,7 +36,9 @@ async function fetchSession() {
     throw new Error("В ссылке нет параметра session.");
   }
 
-  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    headers: initDataHeader(),
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Сессия не найдена.");
@@ -74,6 +76,7 @@ async function uploadSessionVideo(blob) {
 
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/upload`, {
     method: "POST",
+    headers: initDataHeader(),
     body: formData,
   });
 
